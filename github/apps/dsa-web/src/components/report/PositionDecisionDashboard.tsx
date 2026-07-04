@@ -27,6 +27,10 @@ interface PositionDecisionDashboardProps {
 const cn = (...classes: Array<string | false | null | undefined>): string =>
   classes.filter(Boolean).join(' ');
 
+const subtlePillTone = 'border-border/70 bg-muted/70 text-secondary-text';
+const subtleCardClass = 'border-border/70 bg-elevated/80';
+const subtleChipClass = 'border-border/70 bg-muted/70';
+
 const getMarketRadar = (report: AnalysisReport): MarketRadarPayload | null => {
   const snapshot = report.details?.contextSnapshot;
   const candidate = snapshot?.marketRadar ?? snapshot?.market_radar;
@@ -82,7 +86,7 @@ const riskToneMap: Record<string, string> = {
   balanced: 'border-sky-400/40 bg-sky-400/10 text-sky-200',
   defense: 'border-amber-400/40 bg-amber-400/10 text-amber-200',
   danger: 'border-rose-400/40 bg-rose-400/10 text-rose-200',
-  unknown: 'border-white/10 bg-white/5 text-muted-text',
+  unknown: subtlePillTone,
 };
 
 const impactLabelMap: Record<MarketRadarImpact | string, string> = {
@@ -94,9 +98,9 @@ const impactLabelMap: Record<MarketRadarImpact | string, string> = {
 
 const impactToneMap: Record<string, string> = {
   positive: 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200',
-  neutral: 'border-slate-400/40 bg-slate-400/10 text-slate-200',
+  neutral: subtlePillTone,
   negative: 'border-rose-400/40 bg-rose-400/10 text-rose-200',
-  missing: 'border-zinc-500/40 bg-zinc-500/10 text-zinc-300',
+  missing: subtlePillTone,
 };
 
 const strengthLabelMap: Record<string, string> = {
@@ -144,7 +148,7 @@ const marketFreshnessToneMap: Record<string, string> = {
   same_day_current: 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200',
   same_day_stale: 'border-amber-400/40 bg-amber-400/10 text-amber-200',
   stale_other_day: 'border-rose-400/40 bg-rose-400/10 text-rose-200',
-  missing: 'border-zinc-500/40 bg-zinc-500/10 text-zinc-300',
+  missing: subtlePillTone,
 };
 
 const getDataStatusLabel = (status?: string | null): string | null => {
@@ -196,7 +200,7 @@ const LegacyDashboardFallback: React.FC = () => (
 
 const StatusPill: React.FC<{ label: string; tone?: string; className?: string }> = ({
   label,
-  tone = 'border-white/10 bg-white/5 text-secondary-text',
+  tone = subtlePillTone,
   className,
 }) => (
   <span className={cn('inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-semibold', tone, className)}>
@@ -212,7 +216,7 @@ const SectionHeader: React.FC<{
 }> = ({ icon, title, caption, meta }) => (
   <div className="mb-3 flex items-center justify-between gap-3">
     <div className="flex items-center gap-2">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-secondary-text">
+      <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-secondary-text', subtleChipClass)}>
         {icon}
       </span>
       <div>
@@ -229,7 +233,7 @@ const Metric: React.FC<{ label: string; value: string; valueClassName?: string }
   value,
   valueClassName,
 }) => (
-  <div className="min-w-0 border-l border-white/10 pl-3">
+  <div className="min-w-0 border-l border-border/70 pl-3">
     <p className="text-xs text-muted-text">{label}</p>
     <p className={cn('mt-1 truncate font-mono text-lg font-semibold text-foreground', valueClassName)}>
       {value}
@@ -303,7 +307,7 @@ const getTradeDisplayPriceQty = (item: TradeTimelineItem): string => {
 const PortfolioRow: React.FC<{ item: PortfolioMatrixItem }> = ({ item }) => {
   const bbiDetailLine = renderBbiDetailLine(item);
   return (
-    <div className="grid gap-3 border-t border-white/10 py-3 first:border-t-0 md:grid-cols-[1.1fr_0.95fr_1.4fr] md:items-center">
+    <div className="grid gap-3 border-t border-border/70 py-3 first:border-t-0 md:grid-cols-[1.1fr_0.95fr_1.4fr] md:items-center">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-foreground">{item.name}</span>
@@ -334,7 +338,7 @@ const PortfolioRow: React.FC<{ item: PortfolioMatrixItem }> = ({ item }) => {
           {((item.keyLevels?.length ? item.keyLevels : item.key_levels) ?? ['未取得']).map((level) => (
             <span
               key={`${item.code}-${level}`}
-              className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-xs text-secondary-text"
+              className={cn('rounded-md border px-2 py-1 font-mono text-xs text-secondary-text', subtleChipClass)}
             >
               {level}
             </span>
@@ -349,7 +353,7 @@ const PortfolioRow: React.FC<{ item: PortfolioMatrixItem }> = ({ item }) => {
 const ExternalGroup: React.FC<{ group: MarketRadarExternalGroup }> = ({ group }) => {
   const impact = group.impact || 'missing';
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+    <div className={cn('rounded-lg border p-3', subtleCardClass)}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold text-foreground">{group.title}</span>
         <StatusPill label={getImpactLabel(impact)} tone={impactToneMap[impact] ?? impactToneMap.missing} />
@@ -367,7 +371,7 @@ const ExternalGroup: React.FC<{ group: MarketRadarExternalGroup }> = ({ group })
                 <span className="min-w-0 truncate text-secondary-text">{item.name}</span>
                 <span className="flex shrink-0 items-center gap-1.5">
                   {dataStatus === 'missing' || item.impact === 'missing' ? (
-                    <span className="rounded-full border border-zinc-500/40 bg-zinc-500/10 px-1.5 py-0.5 text-[11px] text-zinc-300">
+                    <span className={cn('rounded-full border px-1.5 py-0.5 text-[11px]', subtlePillTone)}>
                       数据缺失
                     </span>
                   ) : null}
@@ -409,9 +413,9 @@ const TradeTimelineRow: React.FC<{ item: TradeTimelineItem }> = ({ item }) => {
     ? 'border-rose-400/40 bg-rose-400/10 text-rose-200'
     : isSell
       ? 'border-sky-400/40 bg-sky-400/10 text-sky-200'
-      : 'border-white/10 bg-white/5 text-secondary-text';
+      : subtlePillTone;
   return (
-    <div className="grid gap-2 border-t border-white/10 py-3 first:border-t-0 sm:grid-cols-[4rem_1fr_auto] sm:items-center">
+    <div className="grid gap-2 border-t border-border/70 py-3 first:border-t-0 sm:grid-cols-[4rem_1fr_auto] sm:items-center">
       <span className="font-mono text-sm text-muted-text">{item.time}</span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -441,7 +445,7 @@ const TradeTimelineRow: React.FC<{ item: TradeTimelineItem }> = ({ item }) => {
 };
 
 const PlanItem: React.FC<{ item: NextSessionPlanItem }> = ({ item }) => (
-  <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+  <div className={cn('rounded-lg border p-3', subtleCardClass)}>
     <div className="mb-2 flex items-center justify-between gap-2">
       <span className="font-semibold text-foreground">{item.title}</span>
       {item.ratio ? <StatusPill label={item.ratio} tone="border-cyan-400/40 bg-cyan-400/10 text-cyan-200" /> : null}
@@ -491,8 +495,8 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
 
   return (
     <section className="space-y-5" aria-label="A股持仓决策仪表盘">
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.92),rgba(24,24,27,0.92))]">
-        <div className="border-b border-white/10 px-4 py-4">
+      <div className="overflow-hidden rounded-xl border border-border/70 bg-elevated/90 shadow-soft-card">
+        <div className="border-b border-border/70 px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="flex items-center gap-2 text-xl font-bold text-foreground">
@@ -520,7 +524,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
         </div>
       </div>
 
-      <section className="rounded-xl border border-white/10 bg-surface/70 p-4" aria-label="A股市场雷达">
+      <section className="rounded-xl border border-border/70 bg-surface/70 p-4" aria-label="A股市场雷达">
         <SectionHeader
           icon={<BarChart3 className="h-4 w-4" />}
           title="A股市场雷达"
@@ -531,7 +535,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
               {radarSnapshotTime ? (
                 <StatusPill
                   label={`报告时间 ${radarSnapshotTime}`}
-                  tone="border-white/10 bg-white/5 text-secondary-text"
+                  tone={subtlePillTone}
                 />
               ) : null}
             </>
@@ -546,7 +550,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
               />
             ) : null}
             {sessionStatusLabel ? (
-              <StatusPill label={sessionStatusLabel} tone="border-white/10 bg-white/5 text-secondary-text" />
+              <StatusPill label={sessionStatusLabel} tone={subtlePillTone} />
             ) : null}
           </div>
         ) : null}
@@ -559,7 +563,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
               index.dataStatus ?? index.data_status,
             );
             return (
-              <div key={`${index.code || index.name}`} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <div key={`${index.code || index.name}`} className={cn('rounded-lg border p-3', subtleCardClass)}>
                 <p className="truncate text-sm font-semibold text-foreground">{index.name}</p>
                 <div className="mt-2 flex items-end justify-between gap-2">
                   <span className="font-mono text-lg text-secondary-text">
@@ -596,7 +600,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
               <div
                 key={sector.name}
                 data-testid={`market-sector-chip-${sector.name}`}
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5"
+                className={cn('rounded-lg border px-3 py-2.5', subtleCardClass)}
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="min-w-0 truncate text-sm font-semibold text-foreground">{sector.name}</span>
@@ -625,7 +629,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
         ) : null}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-surface/70 p-4" aria-label="外围影响雷达">
+      <section className="rounded-xl border border-border/70 bg-surface/70 p-4" aria-label="外围影响雷达">
         <SectionHeader
           icon={<Globe2 className="h-4 w-4" />}
           title="外围影响雷达"
@@ -638,7 +642,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
         </div>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-surface/70 p-4" aria-label="持仓决策矩阵">
+      <section className="rounded-xl border border-border/70 bg-surface/70 p-4" aria-label="持仓决策矩阵">
         <SectionHeader
           icon={<ListChecks className="h-4 w-4" />}
           title="持仓决策矩阵"
@@ -654,7 +658,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
       </section>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_1.15fr]">
-        <section className="rounded-xl border border-white/10 bg-surface/70 p-4" aria-label="今日操作时间线">
+        <section className="rounded-xl border border-border/70 bg-surface/70 p-4" aria-label="今日操作时间线">
           <SectionHeader
             icon={<Clock3 className="h-4 w-4" />}
             title="今日操作时间线"
@@ -669,7 +673,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
           </div>
         </section>
 
-        <section className="rounded-xl border border-white/10 bg-surface/70 p-4" aria-label="明日三阶段执行">
+        <section className="rounded-xl border border-border/70 bg-surface/70 p-4" aria-label="明日三阶段执行">
           <SectionHeader
             icon={<Activity className="h-4 w-4" />}
             title="明日三阶段执行"
@@ -679,7 +683,7 @@ export const PositionDecisionDashboard: React.FC<PositionDecisionDashboardProps>
             {nextSessionPlan.length ? (
               nextSessionPlan.map((item) => <PlanItem key={`${item.stage}-${item.title}`} item={item} />)
             ) : (
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-muted-text">
+              <div className={cn('rounded-lg border p-3 text-sm text-muted-text', subtleCardClass)}>
                 明日计划未取得。
               </div>
             )}

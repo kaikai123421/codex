@@ -1043,7 +1043,7 @@ const PortfolioPage: React.FC = () => {
           </p>
         </div>
         {hasAccounts ? (
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+          <div className="rounded-xl border border-border/70 bg-elevated/80 p-3">
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px_280px] gap-2 items-end">
               <div>
                 <p className="text-xs text-secondary mb-1">{text.accountView}</p>
@@ -1095,7 +1095,7 @@ const PortfolioPage: React.FC = () => {
                   type="button"
                   onClick={openAccountDeleteDialog}
                   disabled={!canDeleteSelectedAccount}
-                  className="btn-secondary text-sm flex-1 border-red-400/40 text-red-100 hover:bg-red-500/15 disabled:border-white/10 disabled:text-secondary"
+                  className="btn-secondary text-sm flex-1 border-red-400/40 text-destructive hover:bg-red-500/15 disabled:border-border disabled:text-secondary"
                 >
                   {accountDeleteLoading ? text.deletingAccount : text.deleteAccount}
                 </button>
@@ -1280,7 +1280,7 @@ const PortfolioPage: React.FC = () => {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-black/15 p-3">
+            <div className="rounded-2xl border border-border/70 bg-elevated/80 p-3">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                 <div>
                   <p className="text-secondary">识别账户</p>
@@ -1325,9 +1325,9 @@ const PortfolioPage: React.FC = () => {
           </div>
 
           {screenshotPositions.length > 0 ? (
-            <div className="overflow-x-auto rounded-2xl border border-white/10">
+            <div className="overflow-x-auto rounded-2xl border border-border/70">
               <table className="min-w-[980px] w-full text-xs">
-                <thead className="border-b border-white/10 text-secondary">
+                <thead className="border-b border-border/70 text-secondary">
                   <tr>
                     <th className="px-3 py-2 text-left">名称</th>
                     <th className="px-3 py-2 text-left">代码</th>
@@ -1341,7 +1341,7 @@ const PortfolioPage: React.FC = () => {
                 </thead>
                 <tbody>
                   {screenshotPositions.map((position, index) => (
-                    <tr key={`${position.symbol}-${index}`} className="border-b border-white/5">
+                    <tr key={`${position.symbol}-${index}`} className="border-b border-border/50">
                       <td className="px-3 py-2">
                         <input
                           className={PORTFOLIO_INPUT_CLASS}
@@ -1462,7 +1462,7 @@ const PortfolioPage: React.FC = () => {
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-[860px] w-full text-sm">
-                <thead className="text-xs text-secondary border-b border-white/10">
+                <thead className="text-xs text-secondary border-b border-border/70">
                   <tr>
                     <th className="text-left py-2 pr-2">{text.account}</th>
                     <th className="text-left py-2 pr-2">{text.code}</th>
@@ -1482,7 +1482,7 @@ const PortfolioPage: React.FC = () => {
                     const analyzing = positionAnalysisLoadingKey === rowKey;
                     const signal = signalByPositionKey.get(rowKey);
                     return (
-                    <tr key={rowKey} className="border-b border-white/5">
+                    <tr key={rowKey} className="border-b border-border/50">
                       <td className="py-2 pr-2 text-secondary">{row.accountName}</td>
                       <td className="py-2 pr-2 font-mono text-foreground">{row.symbol}</td>
                       <td className="py-2 pr-2 text-right">{row.quantity.toFixed(2)}</td>
@@ -1816,9 +1816,9 @@ const PortfolioPage: React.FC = () => {
             <div className="text-[11px] text-secondary">
               {writeBlocked ? '删除修正仅在单账户视图可用。请先选择具体账户后再删除错误流水。' : '如有错误流水，可直接删除后重新录入。'}
             </div>
-            <div className="max-h-64 overflow-auto rounded-lg border border-white/10 p-2">
+            <div className="max-h-64 overflow-auto rounded-lg border border-border/70 p-2">
               {eventType === 'trade' && tradeEvents.map((item) => (
-                <div key={`t-${item.id}`} className="flex items-start justify-between gap-3 border-b border-white/5 py-2 text-xs text-secondary">
+                <div key={`t-${item.id}`} className="flex items-start justify-between gap-3 border-b border-border/50 py-2 text-xs text-secondary">
                   <div className="min-w-0">
                     {item.tradeDate} {formatSideLabel(item.side)} {item.symbol} 数量={item.quantity} 价格={item.price}
                   </div>

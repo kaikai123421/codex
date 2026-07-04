@@ -61,7 +61,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
 
   if (!data) {
     return (
-      <div className="text-gray-500 italic py-4 text-center">{t('common.noData')}</div>
+      <div className="py-4 text-center italic text-muted-text">{t('common.noData')}</div>
     );
   }
 
@@ -89,7 +89,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
       <button
         onClick={handleCopy}
         className="absolute top-2 right-2 px-2 py-1 text-xs rounded
-          bg-slate-700 hover:bg-slate-600 text-gray-300
+          border border-border/70 bg-muted text-secondary-text hover:bg-hover
           transition-colors z-10"
       >
         {copied ? t('common.copied') : t('common.copy')}
@@ -97,8 +97,8 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
 
       {/* JSON 内容 */}
       <div
-        className="bg-slate-900/80 rounded-lg p-4 overflow-auto custom-scrollbar
-          border border-slate-700/50 font-mono text-sm text-gray-300"
+        className="overflow-auto rounded-lg border border-border/70 bg-elevated/90 p-4
+          font-mono text-sm text-secondary-text custom-scrollbar"
         style={{ maxHeight }}
       >
         <pre className="whitespace-pre-wrap break-words">
