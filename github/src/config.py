@@ -2914,6 +2914,10 @@ class Config:
         """
         database_url = (self.database_url or "").strip()
         if database_url:
+            if database_url.startswith("postgresql://"):
+                return f"postgresql+psycopg://{database_url.removeprefix('postgresql://')}"
+            if database_url.startswith("postgres://"):
+                return f"postgresql+psycopg://{database_url.removeprefix('postgres://')}"
             return database_url
 
         db_path = Path(self.database_path)

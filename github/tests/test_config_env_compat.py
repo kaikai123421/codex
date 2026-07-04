@@ -37,6 +37,28 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_plain_postgres_database_url_uses_psycopg_driver(
+        self,
+        _mock_parse_litellm_yaml,
+        _mock_setup_env,
+    ):
+        with patch.dict(
+            os.environ,
+            {
+                "STOCK_LIST": "600519",
+                "DATABASE_URL": "postgresql://user:pass@db.example/dsa?sslmode=require",
+            },
+            clear=True,
+        ):
+            config = Config._load_from_env()
+
+        self.assertEqual(
+            config.get_db_url(),
+            "postgresql+psycopg://user:pass@db.example/dsa?sslmode=require",
+        )
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     def test_load_from_env_reads_tickflow_api_key(
         self, _mock_parse_litellm_yaml, _mock_setup_env
     ):
