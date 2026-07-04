@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: dsa-private
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: github
+    dockerfilePath: github/docker/Dockerfile
+    dockerContext: github
+    dockerCommand: python main.py --serve-only --host 0.0.0.0 --port 8000
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: TZ
+        value: Asia/Shanghai
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: WEBUI_HOST
+        value: 0.0.0.0
+      - key: WEBUI_PORT
+        value: "8000"
+      - key: API_PORT
+        value: "8000"
+      - key: PORT
+        value: "8000"
+      - key: WEBUI_AUTO_BUILD
+        value: "false"
+      - key: ADMIN_AUTH_ENABLED
+        value: "true"
+      - key: ADMIN_SESSION_MAX_AGE_HOURS
+        value: "24"
+      - key: DATABASE_URL
+        sync: false
+      - key: LOG_DIR
+        value: /app/logs
+      - key: CORS_ALLOW_ALL
+        value: "false"
+      - key: TRUST_X_FORWARDED_FOR
+        value: "true"
+      - key: STOCK_LIST
+        value: 000725,515880,515050,601138,300502,159732
+      - key: REPORT_LANGUAGE
+        value: zh
+      - key: SCHEDULE_ENABLED
+        value: "false"
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TUSHARE_TOKEN
+        sync: false
+      - key: FINNHUB_API_KEY
+        sync: false
+      - key: BRAVE_API_KEYS
+        sync: false

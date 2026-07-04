@@ -1,0 +1,93 @@
+rules:
+  - id: user_value_first
+    name: 用户价值优先
+    source_lens: duan_lens
+    category: business_quality
+    version: 1
+    enabled: true
+    description: 给定标的后，优先判断公司是否真正创造用户价值，而不是只看故事、热度或短期价格。
+    conditions:
+      - field: product_value
+        operator: in
+        value: [strong, improving]
+      - field: customer_retention
+        operator: in
+        value: [stable, improving, high]
+    effect:
+      action_bias: watch_or_hold
+      score_adjustment: 10
+      risk_level: medium
+    reason: 长期价值通常来自持续满足用户需求，而不是短期概念刺激。
+    invalid_when:
+      - product_value_weakens
+      - customer_retention_deteriorates
+      - growth_relies_only_on_promotion_or_subsidy
+    evidence_required:
+      - product_competitiveness
+      - customer_metrics
+      - revenue_quality
+    review:
+      check_after_days: [10]
+      success_criteria: business_quality_evidence_persists
+
+  - id: right_business_right_people_right_price
+    name: 好生意好人好价格
+    source_lens: duan_lens
+    category: philosophy_framework
+    version: 1
+    enabled: true
+    description: 标的需要同时检查商业模式、管理层可信度和价格；任一项明显缺失时降低动作等级。
+    conditions:
+      - field: business_quality
+        operator: in
+        value: [good, excellent]
+      - field: management_quality
+        operator: in
+        value: [acceptable, good, excellent]
+      - field: valuation_state
+        operator: not_in
+        value: [very_expensive]
+    effect:
+      action_bias: watch_or_hold
+      score_adjustment: 12
+      risk_level: medium
+    reason: 长期判断不能只靠单点优势，商业模式、管理层和价格必须互相支撑。
+    invalid_when:
+      - management_trust_breaks
+      - business_quality_declines
+      - valuation_becomes_unreasonable
+    evidence_required:
+      - business_model
+      - management_track_record
+      - valuation_metrics
+    review:
+      check_after_days: [10]
+      success_criteria: three_conditions_remain_supported
+
+  - id: fewer_mistakes_over_more_actions
+    name: 少犯错优先于多操作
+    source_lens: duan_lens
+    category: behavior_discipline
+    version: 1
+    enabled: true
+    description: 当证据不足、价格不舒服或计划不完整时，优先等待，不为了交易而交易。
+    conditions:
+      - field: plan_quality
+        operator: in
+        value: [minimal, unknown, incomplete]
+    effect:
+      action_bias: watch_or_avoid
+      score_adjustment: -18
+      risk_level: medium
+    reason: 没有清晰计划的操作通常难以复盘，也容易被情绪放大。
+    invalid_when:
+      - entry_plan_is_complete
+      - stop_loss_is_defined
+      - invalidation_is_defined
+    evidence_required:
+      - entry_plan
+      - exit_plan
+      - invalidation_conditions
+    review:
+      check_after_days: [1, 3]
+      success_criteria: avoided_unplanned_trade

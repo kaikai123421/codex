@@ -1,0 +1,60 @@
+# 忽略 Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 忽略虚拟环境
+venv/
+.venv/
+env/
+.env
+.env.*
+*.env
+.env.local
+node_modules/
+apps/dsa-web/node_modules/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/.vite/
+
+# 忽略 IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 忽略数据文件（可选，如果想持久化就注释掉）
+# data/
+data/
+logs/
+reports/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+static/
+.git/
+.github/
+.claude/
+.pytest_cache/
+.coverage
+htmlcov/
+playwright-report/
+test-results/
+
+# 忽略测试文件
+test_*.py
+*_test.py
+
+# 忽略文档
+*.md
+!README.md
+
+# Cloud web deployment does not need desktop builds or heavy documentation assets.
+apps/dsa-desktop/
+docs/assets/**/*.gif
+docs/assets/**/*.psd
+docs/assets/**/*.mp4

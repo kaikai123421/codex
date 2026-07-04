@@ -1,0 +1,190 @@
+rules:
+  - id: portfolio_tier_classification_required
+    name: 持仓分层强制识别
+    source_lens: risk_lens
+    category: position_management
+    version: 1
+    enabled: true
+    description: 每次分析持仓时，必须把标的分为核心仓、进攻仓、试错仓、观察仓或防守现金，避免把所有仓位都当成同一种风险处理。
+    required_output:
+      - core_position
+      - attack_position
+      - trial_position
+      - watch_position
+      - defensive_cash
+    effect:
+      action_bias: classify_before_action
+      score_adjustment: 0
+      risk_level: medium
+    reason: 收益提升来自仓位效率。核心仓要敢拿，弱仓要敢减，试错仓不能变成套牢仓。
+    review:
+      check_after_days: [1, 5, 20]
+      success_criteria: every_position_has_role_and_action_reason
+
+  - id: market_phase_position_cap
+    name: 市场阶段仓位上限
+    source_lens: risk_lens
+    category: position_management
+    version: 1
+    enabled: true
+    description: 根据市场强弱调整总仓位上限，防止在系统性风险里用个股逻辑硬扛。
+    position_caps:
+      normal_market: "70%-90%"
+      mixed_market: "60%-75%"
+      risk_off_market: "40%-65%"
+      crash_or_liquidity_stress: "30%-55%"
+    conditions:
+      - field: market_phase
+        operator: in
+        value: [normal_market, mixed_market, risk_off_market, crash_or_liquidity_stress]
+    effect:
+      action_bias: cap_total_exposure
+      score_adjustment: 0
+      risk_level: high
+    reason: 大盘环境决定容错率。系统性杀跌时，先降仓位，再谈个股机会。
+    invalid_when:
+      - market_breadth_recovers
+      - sector_capital_flow_turns_positive
+      - index_reclaims_key_support_with_volume
+    evidence_required:
+      - index_change
+      - market_breadth
+      - market_capital_flow
+      - sector_momentum
+    review:
+      check_after_days: [1, 3, 5]
+      success_criteria: drawdown_controlled_during_weak_market
+
+  - id: account_drawdown_guard
+    name: 账户回撤保护
+    source_lens: risk_lens
+    category: drawdown_control
+    version: 1
+    enabled: true
+    description: 当账户出现明显日内亏损或阶段回撤时，强制降低动作等级，优先保护本金和利润。
+    thresholds:
+      daily_loss_yellow: -3.0
+      daily_loss_red: -5.0
+      peak_to_trough_defense: -8.0
+      peak_to_trough_strict_defense: -10.0
+    effect:
+      action_bias: stop_adding_reduce_risk
+      score_adjustment: -25
+      risk_level: high
+    reason: 单日或阶段回撤会显著降低交易质量。回撤扩大时，最重要的不是找机会，而是停止犯更大的错。
+    invalid_when:
+      - account_recovers_above_defense_line
+      - market_phase_turns_normal
+      - cash_ratio_restored
+    evidence_required:
+      - account_daily_pnl
+      - account_drawdown_from_peak
+      - total_position_ratio
+      - cash_ratio
+    review:
+      check_after_days: [1, 3, 5, 20]
+      success_criteria: no_new_large_loss_after_guard_triggered
+
+  - id: pre_trade_checklist_required
+    name: 交易前检查清单
+    source_lens: user_lens
+    category: behavior_control
+    version: 1
+    enabled: true
+    description: 任何买入、加仓或追回卖出仓位前，必须先回答交易前检查清单，无法回答则动作降级。
+    checklist:
+      - 这是买强还是买便宜
+      - 是否核心主线
+      - 距离日线和周线BBI多远
+      - 主力资金是否流入
+      - 板块和同主线核心标的是否同步走强
+      - 错了跌破哪里卖
+      - 当前仓位是否允许
+      - 买入后现金是否过低
+    effect:
+      action_bias: require_check_before_buy
+      score_adjustment: 0
+      risk_level: medium
+    reason: 交易前检查清单用来拦截冲动交易。答不出来，就不是机会，是情绪。
+    review:
+      check_after_days: [1, 3, 10]
+      success_criteria: fewer_unplanned_trades
+
+  - id: conditional_order_template_required
+    name: 条件单模板强制输出
+    source_lens: user_lens
+    category: execution_plan
+    version: 1
+    enabled: true
+    description: 当用户无法盯盘、要求明日计划或盘前策略时，必须输出条件单模板，明确触发价、确认时间、动作、数量和失效条件。
+    template_fields:
+      - target
+      - trigger_price
+      - confirmation_time
+      - action
+      - quantity_or_ratio
+      - invalidation
+    effect:
+      action_bias: produce_execution_plan
+      score_adjustment: 0
+      risk_level: medium
+    reason: 条件单能把临场情绪变成事前纪律，尤其适合用户早上有事不能盯盘的情况。
+    review:
+      check_after_days: [1, 3, 5]
+      success_criteria: plan_executable_without_intraday_attention
+
+  - id: intraday_three_stage_decision
+    name: 日内三阶段决策
+    source_lens: technical_lens
+    category: execution_plan
+    version: 1
+    enabled: true
+    description: 日内操作建议必须拆为开盘15分钟、10:30前后、14:30之后三段，避免一开盘就追涨杀跌。
+    stages:
+      open_15min: 只看承接，不急着追高或割肉
+      mid_morning: 判断是真弱、洗盘还是高开低走派发
+      late_session: 决定留仓、防守减仓或尾盘条件单
+    effect:
+      action_bias: stage_intraday_decision
+      score_adjustment: 0
+      risk_level: medium
+    reason: 日内不同时间段的信息含量不同。把动作分阶段，可以减少开盘情绪化决策。
+    review:
+      check_after_days: [1, 3, 5]
+      success_criteria: fewer_opening_impulse_trades
+
+  - id: sold_too_early_reentry_control
+    name: 卖飞后追回控制
+    source_lens: user_lens
+    category: behavior_control
+    version: 1
+    enabled: true
+    description: 卖出后标的继续上涨时，禁止立刻情绪追回。必须确认关键位、资金、大盘和板块后，才允许小比例买回。
+    conditions:
+      - field: sold_position_recently
+        operator: equals
+        value: true
+      - field: price_continues_up_after_sale
+        operator: equals
+        value: true
+    effect:
+      action_bias: wait_confirmed_reentry
+      max_reentry_ratio_of_sold_quantity: "30%-50%"
+      score_adjustment: -10
+      risk_level: medium
+    reason: 卖飞不是错误，卖飞后失控追回才容易形成追涨杀跌。
+    invalid_when:
+      - price_reclaims_key_level_with_volume
+      - capital_flow_turns_positive
+      - market_and_sector_recover
+      - position_ratio_allows_reentry
+    evidence_required:
+      - sale_price
+      - current_price
+      - key_level_reclaim
+      - capital_flow
+      - market_phase
+      - current_position_ratio
+    review:
+      check_after_days: [1, 3, 5, 10]
+      success_criteria: avoided_emotional_rebuy_after_sale

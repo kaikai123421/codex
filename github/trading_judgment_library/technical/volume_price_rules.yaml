@@ -1,0 +1,413 @@
+rules:
+  - id: volume_breakout_confirmation
+    name: 放量突破确认
+    source_lens: technical_lens
+    category: volume_price
+    version: 1
+    enabled: true
+    description: 给定标的在突破关键压力位时，需要成交量和收盘位置确认，避免假突破。
+    conditions:
+      - field: close
+        operator: greater_than
+        value_field: resistance_level
+      - field: volume_ratio_20d
+        operator: greater_than_or_equal
+        value: 1.5
+      - field: close_position_in_candle
+        operator: greater_than_or_equal
+        value: 0.65
+    effect:
+      action_bias: watch_or_trial_buy
+      score_adjustment: 12
+      risk_level: medium
+    reason: 突破需要量能和收盘质量共同验证，否则容易冲高回落。
+    invalid_when:
+      - close_falls_back_below_breakout_level
+      - volume_expands_but_price_stalls
+    evidence_required:
+      - daily_kline
+      - volume
+      - resistance_level
+    review:
+      check_after_days: [1, 3, 5]
+      success_criteria: price_holds_above_breakout_level
+
+  - id: shrink_pullback_hold_support
+    name: 缩量回踩不破
+    source_lens: technical_lens
+    category: volume_price
+    version: 1
+    enabled: true
+    description: 趋势标的回踩关键均线或支撑位时，如果缩量不破，可进入等待买点或试仓观察。
+    conditions:
+      - field: trend_state
+        operator: equals
+        value: uptrend
+      - field: pullback_to_support
+        operator: equals
+        value: true
+      - field: volume_ratio_20d
+        operator: less_than
+        value: 1.0
+    effect:
+      action_bias: watch_or_trial_buy
+      score_adjustment: 10
+      risk_level: medium
+    reason: 趋势中的缩量回踩说明抛压暂未明显放大，但仍需确认支撑有效。
+    invalid_when:
+      - close_breaks_support
+      - rebound_has_no_volume_confirmation
+    evidence_required:
+      - daily_kline
+      - moving_averages
+      - support_level
+    review:
+      check_after_days: [1, 3, 5, 10]
+      success_criteria: support_holds_and_rebound_confirms
+
+  - id: high_volume_stalling_after_rally
+    name: 高位放量滞涨
+    source_lens: technical_lens
+    category: risk_pattern
+    version: 1
+    enabled: true
+    description: 大幅上涨后连续放量但价格推进失败，说明筹码分歧变大，追高风险较高。
+    conditions:
+      - field: price_position
+        operator: equals
+        value: high_area
+      - field: volume_ratio_20d
+        operator: greater_than
+        value: 1.5
+      - field: price_change_3d
+        operator: less_than
+        value: 3
+    effect:
+      action_bias: avoid_or_reduce
+      score_adjustment: -25
+      risk_level: high
+    reason: 高位放量但价格推进失败，可能是资金派发或趋势衰竭。
+    invalid_when:
+      - close_breaks_above_stalling_range_with_volume
+      - sector_momentum_strengthens_again
+    evidence_required:
+      - daily_kline
+      - volume
+      - sector_momentum
+    review:
+      check_after_days: [1, 3, 5, 10]
+      success_criteria: avoided_chasing_before_pullback_or_confirmation
+
+  - id: buy_strength_not_weakness
+    name: 买强不买弱
+    source_lens: user_lens
+    category: relative_strength
+    version: 1
+    enabled: true
+    description: 同一主线或观察池内，优先选择相对强势、趋势更完整、资金承接更好的标的；不因为弱票便宜就买弱。
+    conditions:
+      - field: sector_trend
+        operator: in
+        value: [uptrend, strong_rebound]
+      - field: relative_strength_rank_in_watchlist
+        operator: greater_than_or_equal
+        value: 0.65
+      - field: trend_state
+        operator: in
+        value: [uptrend, strong_rebound]
+    effect:
+      action_bias: watch_or_hold_or_trial_buy
+      score_adjustment: 12
+      risk_level: medium
+    reason: 主线向上时，强票通常代表资金共识和趋势质量；弱票的便宜可能是资金不认可，而不是机会。
+    invalid_when:
+      - relative_strength_falls_below_watchlist_median
+      - sector_momentum_turns_weak
+      - price_breaks_key_support
+    evidence_required:
+      - watchlist_relative_strength
+      - sector_momentum
+      - daily_kline
+      - volume
+    review:
+      check_after_days: [1, 3, 5, 10]
+      success_criteria: strong_names_continue_to_outperform_weak_names
+
+  - id: rotate_weak_to_strong
+    name: 去弱留强
+    source_lens: user_lens
+    category: portfolio_rotation
+    version: 1
+    enabled: true
+    description: 持仓或观察池中，同一科技主线内部出现明显强弱分化时，降低弱票权重，保留或优先配置强票。
+    conditions:
+      - field: watchlist_dispersion
+        operator: greater_than_or_equal
+        value: moderate
+      - field: position_relative_strength_rank
+        operator: less_than
+        value: 0.4
+      - field: stronger_peer_available
+        operator: equals
+        value: true
+    effect:
+      action_bias: reduce_weak_hold_strong
+      score_adjustment: -10
+      risk_level: medium
+    reason: 趋势行情里资金会集中到更强的方向；弱票如果持续跑输，同样占用仓位和情绪，却降低组合效率。
+    invalid_when:
+      - weak_position_reclaims_key_support_with_volume
+      - weak_position_turns_into_sector_leader
+      - stronger_peer_enters_high_volume_stalling_after_rally
+    evidence_required:
+      - portfolio_positions
+      - watchlist_relative_strength
+      - sector_leader_comparison
+      - capital_flow
+    review:
+      check_after_days: [1, 3, 5, 10]
+      success_criteria: reduced_weak_names_underperform_or_strong_names_keep_leading
+
+  - id: long_trend_bbi_support_line
+    name: 长期趋势票 BBI 支撑线
+    source_lens: user_lens
+    category: long_trend_support
+    version: 1
+    enabled: true
+    description: 仅适用于长期趋势向上的标的。长期趋势票回踩 BBI 时，把 BBI 作为重要支撑和散户割肉线参考，优先结合周K判断，不用普通短线破位口径误杀趋势仓。
+    applies_to:
+      horizons: [swing, position, long_term]
+      trend_required: long_term_uptrend
+    conditions:
+      - field: long_term_trend_state
+        operator: equals
+        value: uptrend
+      - field: weekly_trend_state
+        operator: in
+        value: [uptrend, healthy_pullback]
+      - field: price_near_bbi
+        operator: equals
+        value: true
+    effect:
+      action_bias: watch_or_hold_support
+      score_adjustment: 10
+      risk_level: medium
+    reason: 长期趋势票打到 BBI 往往是散户割肉和趋势资金重新观察的位置；周K比日内波动更能过滤噪音。
+    invalid_when:
+      - weekly_close_breaks_bbi
+      - bbi_turns_down
+      - long_term_trend_state_turns_down
+      - sector_momentum_turns_weak
+    evidence_required:
+      - daily_bbi
+      - weekly_bbi
+      - weekly_kline
+      - long_term_trend_state
+      - sector_momentum
+    review:
+      check_after_days: [3, 5, 10, 20]
+      success_criteria: weekly_bbi_holds_and_price_rebounds_or_stabilizes
+
+  - id: capital_inflow_confirms_strength
+    name: 资金流入确认强势
+    source_lens: technical_lens
+    category: capital_flow
+    version: 1
+    enabled: true
+    description: 标的上涨或突破时，如果主力净流入、超大单/大单方向、成交额和板块资金同步改善，可增强趋势有效性判断。
+    conditions:
+      - field: price_trend
+        operator: in
+        value: [uptrend, breakout, strong_rebound]
+      - field: main_capital_net_inflow
+        operator: greater_than
+        value: 0
+      - field: main_capital_net_inflow_ratio
+        operator: greater_than_or_equal
+        value: 0.03
+      - field: sector_capital_flow
+        operator: in
+        value: [neutral_positive, positive, strongly_positive]
+    effect:
+      action_bias: hold_or_watch_strength
+      score_adjustment: 10
+      risk_level: medium
+    reason: 价格强势叠加资金净流入，说明趋势不仅是技术形态，背后有真实承接；但仍需结合位置和估值，不能盲目追高。
+    invalid_when:
+      - capital_inflow_turns_to_outflow
+      - price_breaks_key_support
+      - volume_expands_but_price_stalls
+    evidence_required:
+      - main_capital_net_inflow
+      - super_large_order_flow
+      - large_order_flow
+      - amount
+      - sector_capital_flow
+    review:
+      check_after_days: [1, 3, 5]
+      success_criteria: price_holds_or_outperforms_with_continued_capital_support
+
+  - id: capital_outflow_divergence_risk
+    name: 资金流出背离风险
+    source_lens: technical_lens
+    category: capital_flow_risk
+    version: 1
+    enabled: true
+    description: 标的价格维持高位或上涨，但主力资金连续净流出、超大单/大单卖出占优，说明短线分歧或派发风险上升。
+    conditions:
+      - field: price_position
+        operator: in
+        value: [high_area, above_short_term_ma, extended_from_bbi]
+      - field: main_capital_net_inflow
+        operator: less_than
+        value: 0
+      - field: capital_outflow_days
+        operator: greater_than_or_equal
+        value: 2
+      - field: volume_ratio_20d
+        operator: greater_than_or_equal
+        value: 1.2
+    effect:
+      action_bias: watch_or_reduce
+      score_adjustment: -15
+      risk_level: high
+    reason: 高位或偏离支撑时出现连续资金流出，容易形成冲高回落、拉高派发或短线回撤；需要降低追高和加仓优先级。
+    invalid_when:
+      - main_capital_net_inflow_turns_positive
+      - price_breaks_above_recent_high_with_volume
+      - sector_capital_flow_turns_strongly_positive
+    evidence_required:
+      - main_capital_net_inflow
+      - capital_outflow_days
+      - super_large_order_flow
+      - large_order_flow
+      - volume
+      - intraday_order_flow
+    review:
+      check_after_days: [1, 3, 5, 10]
+      success_criteria: avoided_chasing_before_pullback_or_outflow_confirmation
+
+  - id: gap_up_fade_distribution_risk
+    name: 高开低走不加仓
+    source_lens: technical_lens
+    category: candle_risk_pattern
+    version: 1
+    enabled: true
+    description: 标的高开后全天走弱，收盘靠近低位，说明上方抛压或资金兑现明显。该形态默认不是加仓点，只有次日重新站回高开实体区并有资金回流，才允许重新评估。
+    conditions:
+      - field: open_gap_pct
+        operator: greater_than_or_equal
+        value: 1.0
+      - field: intraday_trend
+        operator: equals
+        value: fade
+      - field: close_position_in_candle
+        operator: less_than_or_equal
+        value: 0.35
+    effect:
+      action_bias: avoid_add_or_reduce
+      score_adjustment: -18
+      risk_level: high
+    reason: 高开低走常见于利好兑现、冲高派发或弱势环境里的假强。仓位已经较高时，不应把这种走势误判成低吸机会。
+    invalid_when:
+      - next_day_close_reclaims_gap_open_zone_with_volume
+      - sector_capital_flow_turns_strongly_positive
+      - price_reclaims_key_support_with_intraday_order_flow
+    evidence_required:
+      - daily_kline
+      - intraday_trend
+      - volume
+      - capital_flow
+      - sector_momentum
+    review:
+      check_after_days: [1, 3, 5]
+      success_criteria: avoided_adding_before_reclaim_confirmation
+
+  - id: intraday_flash_crash_reclaim_support
+    name: 盘中闪崩收回支撑
+    source_lens: technical_lens
+    category: panic_washout
+    version: 1
+    enabled: true
+    description: 长期趋势或核心主线标的盘中急跌、打出恐慌盘，但随后快速收回关键支撑并留下长下影，可视为洗盘或恐慌释放后的观察/试探加仓信号。
+    applies_to:
+      horizons: [intraday, swing, position]
+      trend_required: uptrend_or_core_holding
+    conditions:
+      - field: intraday_drop_pct
+        operator: less_than_or_equal
+        value: -3.0
+      - field: price_reclaims_key_support
+        operator: equals
+        value: true
+      - field: lower_shadow_ratio
+        operator: greater_than_or_equal
+        value: 0.45
+      - field: close_position_in_candle
+        operator: greater_than_or_equal
+        value: 0.5
+    effect:
+      action_bias: watch_or_trial_add
+      score_adjustment: 12
+      risk_level: medium
+    reason: 闪崩后能收回支撑，说明恐慌盘被承接。但必须结合大盘风险、资金回流和仓位，不能在系统性杀跌中盲目补仓。
+    invalid_when:
+      - close_breaks_flash_crash_low
+      - market_phase_is_risk_off_and_no_reclaim
+      - capital_flow_remains_strongly_negative
+      - next_day_fails_to_hold_reclaimed_support
+    evidence_required:
+      - intraday_kline
+      - daily_kline
+      - support_level
+      - main_capital_net_inflow
+      - intraday_order_flow
+      - market_phase
+    review:
+      check_after_days: [1, 3, 5, 10]
+      success_criteria: reclaimed_support_holds_and_price_stabilizes
+
+  - id: bbi_capitulation_add_zone
+    name: BBI散户割肉线加仓观察
+    source_lens: user_lens
+    category: long_trend_support
+    version: 1
+    enabled: true
+    description: 长期趋势向上的核心标的回踩日线或周线 BBI，出现恐慌杀跌、长下影或缩量企稳时，视为散户割肉线附近的观察区。只有支撑有效、资金不继续恶化、仓位允许时，才允许小额试探加仓。
+    applies_to:
+      horizons: [swing, position, long_term]
+      trend_required: long_term_uptrend
+    conditions:
+      - field: long_term_trend_state
+        operator: equals
+        value: uptrend
+      - field: price_near_bbi
+        operator: equals
+        value: true
+      - field: weekly_trend_state
+        operator: in
+        value: [uptrend, healthy_pullback]
+      - field: panic_or_shrink_stabilization
+        operator: equals
+        value: true
+    effect:
+      action_bias: watch_or_small_add
+      score_adjustment: 14
+      risk_level: medium
+    reason: 对长期趋势票，BBI 附近经常是散户恐慌割肉与趋势资金重新观察的位置。但加仓必须小额、分批，并以周K和资金承接确认，不能把破位当机会。
+    invalid_when:
+      - weekly_close_breaks_bbi
+      - bbi_turns_down
+      - long_term_trend_state_turns_down
+      - capital_flow_remains_strongly_negative
+      - market_phase_is_risk_off_and_position_is_high
+    evidence_required:
+      - daily_bbi
+      - weekly_bbi
+      - weekly_kline
+      - lower_shadow_or_shrink_volume
+      - capital_flow
+      - position_context
+    review:
+      check_after_days: [3, 5, 10, 20]
+      success_criteria: bbi_support_holds_and_rebound_or_stabilization_confirms

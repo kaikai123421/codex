@@ -1,0 +1,92 @@
+rules:
+  - id: durable_moat_check
+    name: 持久护城河检查
+    source_lens: buffett_lens
+    category: philosophy_quality
+    version: 1
+    enabled: true
+    description: 给定标的后，先判断公司是否具备可持续竞争优势，而不是只看短期股价波动。
+    conditions:
+      - field: business_model_clarity
+        operator: in
+        value: [clear, very_clear]
+      - field: competitive_advantage
+        operator: in
+        value: [brand, network_effect, cost_advantage, switching_cost, scale]
+      - field: profitability_stability
+        operator: greater_than_or_equal
+        value: stable
+    effect:
+      action_bias: watch_or_hold
+      score_adjustment: 12
+      risk_level: medium
+    reason: 长期持有的前提是公司能持续抵御竞争并维持较高资本回报。
+    invalid_when:
+      - moat_is_eroding
+      - profitability_declines_structurally
+      - core_business_becomes_hard_to_understand
+    evidence_required:
+      - financials
+      - industry_position
+      - profitability_history
+    review:
+      check_after_days: [10]
+      success_criteria: moat_evidence_remains_intact
+
+  - id: margin_of_safety_required
+    name: 安全边际优先
+    source_lens: buffett_lens
+    category: valuation_discipline
+    version: 1
+    enabled: true
+    description: 即使公司质量较高，也需要价格留出安全边际；好公司不等于任何价格都能买。
+    conditions:
+      - field: business_quality
+        operator: in
+        value: [good, excellent]
+      - field: valuation_state
+        operator: in
+        value: [fair, expensive, very_expensive]
+    effect:
+      action_bias: watch
+      score_adjustment: -6
+      risk_level: medium
+    reason: 高质量资产如果估值透支，后续收益率和容错率都会下降。
+    invalid_when:
+      - valuation_returns_to_reasonable_zone
+      - earnings_growth_covers_valuation
+    evidence_required:
+      - valuation_metrics
+      - earnings_growth
+      - historical_valuation_range
+    review:
+      check_after_days: [10]
+      success_criteria: price_or_fundamentals_improve_margin_of_safety
+
+  - id: do_not_touch_unknown_business
+    name: 不懂不做
+    source_lens: buffett_lens
+    category: hard_filter
+    version: 1
+    enabled: true
+    description: 如果业务模式、盈利来源或关键风险无法解释清楚，默认不参与。
+    conditions:
+      - field: business_model_clarity
+        operator: in
+        value: [unclear, unknown]
+    effect:
+      action_bias: avoid
+      score_adjustment: -35
+      risk_level: high
+      hard_reject: true
+    reason: 不能解释清楚的标的无法形成可执行计划，也无法有效复盘。
+    invalid_when:
+      - business_model_is_explained_with_evidence
+      - key_risks_are_identified
+    evidence_required:
+      - business_description
+      - revenue_breakdown
+      - risk_disclosure
+    review:
+      check_after_days: [3, 10]
+      success_criteria: no_position_until_clarity_improves

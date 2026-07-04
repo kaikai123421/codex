@@ -1,0 +1,83 @@
+rules:
+  - id: thesis_broken
+    name: 投资逻辑证伪
+    source_lens: risk_lens
+    category: hard_reject
+    version: 1
+    enabled: true
+    description: 如果买入或持有的核心逻辑被证伪，优先降低动作等级，不用技术反弹掩盖逻辑问题。
+    conditions:
+      - field: thesis_status
+        operator: equals
+        value: broken
+    effect:
+      action_bias: reduce_or_sell
+      score_adjustment: -45
+      risk_level: high
+      hard_reject: true
+    reason: 交易计划的根基不存在时，继续持有会把判断错误变成仓位风险。
+    invalid_when:
+      - thesis_is_rebuilt_with_new_evidence
+      - original_assumption_recovers
+    evidence_required:
+      - original_thesis
+      - latest_fundamental_evidence
+      - risk_events
+    review:
+      check_after_days: [1, 3, 10]
+      success_criteria: risk_reduced_after_thesis_break
+
+  - id: stop_loss_broken
+    name: 跌破计划止损
+    source_lens: risk_lens
+    category: hard_reject
+    version: 1
+    enabled: true
+    description: 如果价格跌破预先定义的止损线，优先执行风险控制。
+    conditions:
+      - field: close
+        operator: less_than
+        value_field: planned_stop_loss
+    effect:
+      action_bias: reduce_or_sell
+      score_adjustment: -40
+      risk_level: high
+      hard_reject: true
+    reason: 止损线的意义是限制错误成本，不能在触发后临时改口径。
+    invalid_when:
+      - stop_loss_was_not_validly_defined
+      - close_recovers_with_confirmed_reversal
+    evidence_required:
+      - planned_stop_loss
+      - daily_kline
+      - position_context
+    review:
+      check_after_days: [1, 3, 5]
+      success_criteria: avoided_large_drawdown_after_support_failure
+
+  - id: systemic_market_risk
+    name: 系统性市场风险
+    source_lens: risk_lens
+    category: market_risk
+    version: 1
+    enabled: true
+    description: 当大盘、流动性或板块环境明显转弱时，单只标的的买入动作需要降级。
+    conditions:
+      - field: market_phase
+        operator: in
+        value: [risk_off, broad_weakness]
+    effect:
+      action_bias: watch_or_reduce
+      score_adjustment: -20
+      risk_level: high
+    reason: 市场环境恶化会降低个股信号胜率，尤其不适合追高或放大仓位。
+    invalid_when:
+      - market_breadth_recovers
+      - liquidity_and_sector_momentum_improve
+    evidence_required:
+      - market_review
+      - breadth_data
+      - sector_momentum
+    review:
+      check_after_days: [1, 3, 5]
+      success_criteria: avoided_adding_risk_during_broad_weakness

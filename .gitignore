@@ -1,0 +1,54 @@
+# Local secrets
+.env
+.env.*
+*.env
+*.env.local
+!**/.env.example
+.codex/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Node
+node_modules/
+*/node_modules/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/.vite/
+
+# Deployment does not need desktop builds or heavy documentation assets.
+github/apps/dsa-desktop/
+github/docs/assets/**/*.gif
+github/docs/assets/**/*.psd
+github/docs/assets/**/*.mp4
+
+# Local app data
+data/
+logs/
+reports/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+.llm_usage_hmac_secret
+**/.llm_usage_hmac_secret
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Large local installers and scratch artifacts
+*.exe
+local/

@@ -1,0 +1,36 @@
+id: quality_growth_pullback
+name: 质量成长股回踩判断框架
+source_lens: [buffett_lens, duan_lens, technical_lens, risk_lens]
+category: playbook
+version: 1
+enabled: true
+description: 给定一个成长股标的后，先验证商业质量和成长兑现，再等待技术回踩或突破确认，不做盲目追高。
+applies_to:
+  markets: [cn, hk, us]
+  horizons: [3d, 5d, 10d, swing, long]
+entry_logic:
+  - business_quality: good_or_better
+  - growth_evidence: revenue_profit_cashflow_or_guidance_supported
+  - valuation_state: not_very_expensive
+  - technical_setup: pullback_to_support_or_breakout_confirmation
+  - market_phase: not_risk_off
+exit_logic:
+  stop_loss: close_below_planned_support_or_stop_loss
+  reduce: high_volume_stalling_or_growth_evidence_weakens
+  sell: thesis_broken_or_hard_risk_triggered
+position:
+  initial: small_or_medium
+  add_when: thesis_strengthens_and_price_confirms
+  avoid_when: plan_quality_incomplete_or_business_unclear
+output_contract:
+  final_state: one_of_回避_观察_等买点_试仓_持有_加仓_减仓_清仓
+  decision_signal_action: map_to_existing_decision_signal_action
+  matched_lenses: record_triggered_lenses
+  matched_rules: record_triggered_rule_ids
+  entry_plan: price_zone_confirmation_position
+  exit_plan: stop_reduce_sell_invalidation
+  reasoning: explain_business_technical_and_risk_together
+  review_plan: check_after_1_3_5_10_days
+review:
+  check_after_days: [1, 3, 5, 10]
+  success_criteria: entry_waits_for_confirmation_and_drawdown_is_controlled
