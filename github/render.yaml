@@ -25,6 +25,8 @@ services:
         value: "8000"
       - key: WEBUI_AUTO_BUILD
         value: "false"
+      - key: WEBUI_STARTUP_TIMEOUT_SECONDS
+        value: "180"
       - key: ADMIN_AUTH_ENABLED
         value: "true"
       - key: ADMIN_SESSION_MAX_AGE_HOURS
