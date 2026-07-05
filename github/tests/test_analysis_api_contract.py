@@ -2759,7 +2759,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         if create_app is None:
             self.skipTest("fastapi is not installed in this test environment")
 
-        from fastapi.responses import FileResponse
+        from fastapi.responses import HTMLResponse
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -2778,8 +2778,8 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             for traversal in ("../secret.txt", "../../secret.txt", "foo/../../secret.txt"):
                 with self.subTest(traversal=traversal):
                     response = asyncio.run(serve_spa(None, traversal))
-                    self.assertIsInstance(response, FileResponse)
-                    self.assertEqual(Path(response.path).resolve(), (static_dir / "index.html").resolve())
+                    self.assertIsInstance(response, HTMLResponse)
+                    self.assertIn(b"<html>spa</html>", response.body)
 
     def test_sse_generator_reraises_cancelled_error(self) -> None:
         """CancelledError must propagate (not be swallowed) from the SSE event generator."""

@@ -50,9 +50,26 @@ _FRONTEND_INDEX_NO_CACHE_HEADERS = {
 }
 
 
-def _frontend_index_response(static_dir: Path) -> FileResponse:
-    return FileResponse(
-        static_dir / "index.html",
+def _frontend_index_response(static_dir: Path) -> HTMLResponse:
+    """Return the SPA entry HTML without delegating tiny files to FileResponse.
+
+    Render's proxy can be slow to complete some small FileResponse downloads
+    from the SPA fallback while API routes remain healthy. The entry document
+    is tiny and changes only at deploy time, so reading it into memory keeps
+    the response deterministic and still preserves the existing no-cache
+    behavior for HTML.
+    """
+    try:
+        content = (static_dir / "index.html").read_text(encoding="utf-8")
+    except OSError:
+        logger.exception("Failed to read frontend index.html from %s", static_dir)
+        return HTMLResponse(
+            content="Frontend index.html not found",
+            status_code=500,
+            headers=_FRONTEND_INDEX_NO_CACHE_HEADERS,
+        )
+    return HTMLResponse(
+        content=content,
         headers=_FRONTEND_INDEX_NO_CACHE_HEADERS,
     )
 
