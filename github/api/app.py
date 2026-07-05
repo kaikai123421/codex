@@ -74,6 +74,25 @@ def _frontend_index_response(static_dir: Path) -> HTMLResponse:
     )
 
 
+def _frontend_build_info(static_dir: Path) -> dict:
+    """Return non-sensitive frontend/runtime diagnostics for hosted deploys."""
+    index_path = static_dir / "index.html"
+    assets_dir = static_dir / "assets"
+    asset_count = 0
+    if assets_dir.is_dir():
+        asset_count = sum(1 for child in assets_dir.iterdir() if child.is_file())
+    return {
+        "commit": os.getenv("RENDER_GIT_COMMIT") or os.getenv("GIT_COMMIT"),
+        "service": os.getenv("RENDER_SERVICE_NAME"),
+        "staticDir": str(static_dir),
+        "staticDirExists": static_dir.exists(),
+        "indexExists": index_path.is_file(),
+        "indexSize": index_path.stat().st_size if index_path.is_file() else None,
+        "assetCount": asset_count,
+        "source": "spa-entry-htmlresponse-v2",
+    }
+
+
 def _check_frontend_assets_consistency(static_dir: Path) -> List[str]:
     """
     Verify that ``index.html`` only references assets that actually exist
@@ -379,6 +398,11 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
         async def root():
             """根路由 - 返回前端页面"""
             return _frontend_index_response(static_dir)
+
+        @app.get("/login", include_in_schema=False)
+        async def login_page():
+            """Return the SPA entry explicitly for the login route."""
+            return _frontend_index_response(static_dir)
     else:
         _FRONTEND_NOT_BUILT_HTML = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -432,6 +456,11 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
             status="ok",
             timestamp=datetime.now().isoformat()
         )
+
+    @app.get("/api/build-info", include_in_schema=False)
+    async def build_info() -> JSONResponse:
+        """Non-sensitive diagnostics used to verify Render deployments."""
+        return JSONResponse(_frontend_build_info(static_dir))
 
     def _stock_index_candidate_paths() -> tuple[Path, ...]:
         local_candidates = (
