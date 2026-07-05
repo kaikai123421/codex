@@ -66,6 +66,145 @@ def _get_credential_path() -> Path:
     return _get_data_dir() / ".admin_password_hash"
 
 
+def _get_auth_database_url() -> str:
+    """Return SQLAlchemy database URL for cloud auth storage, if configured."""
+    _ensure_env_loaded()
+    raw = (os.getenv("DATABASE_URL") or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("postgresql://"):
+        return f"postgresql+psycopg://{raw.removeprefix('postgresql://')}"
+    if raw.startswith("postgres://"):
+        return f"postgresql+psycopg://{raw.removeprefix('postgres://')}"
+    return raw
+
+
+def _get_auth_engine():
+    """Create a short-lived SQLAlchemy engine for auth credential storage."""
+    db_url = _get_auth_database_url()
+    if not db_url:
+        return None
+    try:
+        from sqlalchemy import create_engine
+
+        connect_args = {}
+        if db_url.startswith("sqlite"):
+            connect_args = {"check_same_thread": False}
+        return create_engine(db_url, pool_pre_ping=True, connect_args=connect_args)
+    except Exception as exc:  # pragma: no cover - defensive import/runtime fallback
+        logger.warning("Auth database engine unavailable: %s", exc)
+        return None
+
+
+def _ensure_auth_table(conn) -> None:
+    """Create auth settings table when durable DB storage is available."""
+    from sqlalchemy import text
+
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS dsa_auth_settings (
+                key VARCHAR(128) PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+    )
+
+
+def _load_credential_from_db() -> bool:
+    """Load credential from durable DB storage into module globals."""
+    global _password_hash_salt, _password_hash_stored
+
+    engine = _get_auth_engine()
+    if engine is None:
+        return False
+    try:
+        from sqlalchemy import text
+
+        with engine.begin() as conn:
+            _ensure_auth_table(conn)
+            raw = conn.execute(
+                text("SELECT value FROM dsa_auth_settings WHERE key = :key"),
+                {"key": "admin_password_hash"},
+            ).scalar_one_or_none()
+        if not raw:
+            return False
+        parsed = _parse_password_hash(str(raw))
+        if parsed is None:
+            logger.warning("Invalid admin password hash in database, ignoring")
+            return False
+        _password_hash_salt, _password_hash_stored = parsed
+        return True
+    except Exception as exc:
+        logger.warning("Failed to read auth credential from database: %s", exc)
+        return False
+    finally:
+        try:
+            engine.dispose()
+        except Exception:
+            pass
+
+
+def _write_credential_to_db(content: str) -> bool:
+    """Persist credential to durable DB storage when DATABASE_URL is configured."""
+    engine = _get_auth_engine()
+    if engine is None:
+        return False
+    try:
+        from sqlalchemy import text
+
+        with engine.begin() as conn:
+            _ensure_auth_table(conn)
+            conn.execute(
+                text("DELETE FROM dsa_auth_settings WHERE key = :key"),
+                {"key": "admin_password_hash"},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO dsa_auth_settings (key, value, updated_at) "
+                    "VALUES (:key, :value, CURRENT_TIMESTAMP)"
+                ),
+                {"key": "admin_password_hash", "value": content},
+            )
+        return True
+    except Exception as exc:
+        logger.error("Failed to write auth credential to database: %s", exc)
+        return False
+    finally:
+        try:
+            engine.dispose()
+        except Exception:
+            pass
+
+
+def _write_credential_to_file(content: str) -> bool:
+    """Persist credential to the local file used by desktop/local deployments."""
+    data_dir = _get_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    cred_path = _get_credential_path()
+    try:
+        tmp_path = cred_path.with_suffix(".tmp")
+        tmp_path.write_text(content)
+        tmp_path.chmod(0o600)
+        tmp_path.replace(cred_path)
+        return True
+    except OSError as e:
+        logger.error("Failed to write credential file: %s", e)
+        return False
+
+
+def _persist_credential(content: str) -> bool:
+    """Persist credential; cloud DB is authoritative when DATABASE_URL exists."""
+    file_ok = _write_credential_to_file(content)
+    db_url = _get_auth_database_url()
+    if not db_url:
+        return file_ok
+    db_ok = _write_credential_to_db(content)
+    return db_ok
+
+
 def _is_auth_enabled_from_env() -> bool:
     """Read ADMIN_AUTH_ENABLED from runtime env first, then .env file."""
     _ensure_env_loaded()
@@ -190,12 +329,30 @@ def _load_credential_from_file() -> bool:
         return False
 
 
+def _load_credential() -> bool:
+    """Load credential from durable DB first, then migrate local file fallback."""
+    if _load_credential_from_db():
+        return True
+    if not _load_credential_from_file():
+        return False
+
+    db_url = _get_auth_database_url()
+    if db_url:
+        try:
+            raw = _get_credential_path().read_text().strip()
+            if raw:
+                _write_credential_to_db(raw)
+        except OSError as e:
+            logger.warning("Failed to migrate auth credential file to database: %s", e)
+    return True
+
+
 def refresh_auth_state() -> None:
     """Reload auth-related state from disk and env."""
     global _auth_enabled, _session_secret
     _auth_enabled = None
     _session_secret = None
-    _load_credential_from_file()
+    _load_credential()
 
 
 def is_auth_enabled() -> bool:
@@ -208,8 +365,8 @@ def is_auth_enabled() -> bool:
 
 
 def has_stored_password() -> bool:
-    """Return whether a valid stored password hash exists on disk."""
-    return _load_credential_from_file()
+    """Return whether a valid stored password hash exists."""
+    return _load_credential()
 
 
 def verify_stored_password(password: str) -> bool:
@@ -256,10 +413,6 @@ def set_initial_password(password: str) -> Optional[str]:
     if err:
         return err
 
-    data_dir = _get_data_dir()
-    data_dir.mkdir(parents=True, exist_ok=True)
-    cred_path = _get_credential_path()
-
     salt = secrets.token_bytes(32)
     derived = hashlib.pbkdf2_hmac(
         "sha256",
@@ -272,11 +425,9 @@ def set_initial_password(password: str) -> Optional[str]:
     content = f"{salt_b64}:{hash_b64}"
 
     try:
-        tmp_path = cred_path.with_suffix(".tmp")
-        tmp_path.write_text(content)
-        tmp_path.chmod(0o600)
-        tmp_path.replace(cred_path)
-        _load_credential_from_file()
+        if not _persist_credential(content):
+            return "密码保存失败"
+        _load_credential()
         return None
     except OSError as e:
         logger.error("Failed to write credential file: %s", e)
@@ -308,7 +459,6 @@ def change_password(current: str, new: str) -> Optional[str]:
     if err:
         return err
 
-    cred_path = _get_credential_path()
     salt = secrets.token_bytes(32)
     derived = hashlib.pbkdf2_hmac(
         "sha256",
@@ -321,12 +471,10 @@ def change_password(current: str, new: str) -> Optional[str]:
     content = f"{salt_b64}:{hash_b64}"
 
     try:
-        tmp_path = cred_path.with_suffix(".tmp")
-        tmp_path.write_text(content)
-        tmp_path.chmod(0o600)
-        tmp_path.replace(cred_path)
+        if not _persist_credential(content):
+            return "密码保存失败"
         # Reload into memory so subsequent verify_password uses new hash
-        _load_credential_from_file()
+        _load_credential()
         return None
     except OSError as e:
         logger.error("Failed to write credential file: %s", e)
@@ -436,10 +584,6 @@ def overwrite_password(new_password: str) -> Optional[str]:
     if err:
         return err
 
-    data_dir = _get_data_dir()
-    data_dir.mkdir(parents=True, exist_ok=True)
-    cred_path = _get_credential_path()
-
     salt = secrets.token_bytes(32)
     derived = hashlib.pbkdf2_hmac(
         "sha256",
@@ -452,11 +596,9 @@ def overwrite_password(new_password: str) -> Optional[str]:
     content = f"{salt_b64}:{hash_b64}"
 
     try:
-        tmp_path = cred_path.with_suffix(".tmp")
-        tmp_path.write_text(content)
-        tmp_path.chmod(0o600)
-        tmp_path.replace(cred_path)
-        _load_credential_from_file()
+        if not _persist_credential(content):
+            return "密码保存失败"
+        _load_credential()
         return None
     except OSError as e:
         logger.error("Failed to write credential file: %s", e)
