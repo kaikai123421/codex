@@ -25,10 +25,11 @@ apps/*/.vite/
 *.swo
 
 # 忽略数据文件（可选，如果想持久化就注释掉）
-# data/
-data/
-logs/
-reports/
+# /data/
+# Anchor these to the repository root so packages like src/data are copied into Docker images.
+/data/
+/logs/
+/reports/
 *.db
 *.db-*
 *.sqlite
