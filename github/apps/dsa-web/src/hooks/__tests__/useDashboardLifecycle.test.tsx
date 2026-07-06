@@ -34,7 +34,7 @@ describe('useDashboardLifecycle', () => {
     vi.useRealTimers();
   });
 
-  it('shows existing history first, then refreshes today dashboard in the background', async () => {
+  it('loads lightweight dashboard data without refreshing today dashboard automatically', async () => {
     const loadInitialHistory = vi.fn().mockResolvedValue(undefined);
     const refreshTodayDashboard = vi.fn().mockResolvedValue(undefined);
     const refreshHistory = vi.fn().mockResolvedValue(undefined);
@@ -43,7 +43,6 @@ describe('useDashboardLifecycle', () => {
     renderHook(() =>
       useDashboardLifecycle({
         loadInitialHistory,
-        refreshTodayDashboard,
         refreshHistory,
         refreshActiveTasks,
         syncTaskCreated: vi.fn(),
@@ -56,17 +55,18 @@ describe('useDashboardLifecycle', () => {
 
     expect(loadInitialHistory).toHaveBeenCalledTimes(1);
     expect(refreshTodayDashboard).not.toHaveBeenCalled();
+    expect(defaultMocks.loadStockBar).toHaveBeenCalledTimes(1);
+    expect(defaultMocks.loadMarketReviewHistory).toHaveBeenCalledTimes(1);
+    expect(refreshActiveTasks).toHaveBeenCalledTimes(1);
 
     await Promise.resolve();
     await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
 
-    expect(refreshTodayDashboard).toHaveBeenCalledTimes(1);
-    expect(refreshHistory).toHaveBeenCalledWith(true);
+    expect(refreshTodayDashboard).not.toHaveBeenCalled();
+    expect(refreshHistory).not.toHaveBeenCalled();
   });
 
-  it('falls back to initial history when today dashboard refresh fails', async () => {
+  it('does not let optional startup refreshes block initial history', async () => {
     const loadInitialHistory = vi.fn().mockResolvedValue(undefined);
     const refreshTodayDashboard = vi.fn().mockRejectedValue(new Error('refresh failed'));
     const refreshHistory = vi.fn().mockResolvedValue(undefined);
@@ -75,7 +75,6 @@ describe('useDashboardLifecycle', () => {
     renderHook(() =>
       useDashboardLifecycle({
         loadInitialHistory,
-        refreshTodayDashboard,
         refreshHistory,
         refreshActiveTasks,
         syncTaskCreated: vi.fn(),
@@ -90,6 +89,7 @@ describe('useDashboardLifecycle', () => {
     await Promise.resolve();
 
     expect(loadInitialHistory).toHaveBeenCalledTimes(1);
+    expect(refreshTodayDashboard).not.toHaveBeenCalled();
     expect(defaultMocks.loadMarketReviewHistory).toHaveBeenCalledTimes(1);
     expect(refreshActiveTasks).toHaveBeenCalledTimes(1);
   });

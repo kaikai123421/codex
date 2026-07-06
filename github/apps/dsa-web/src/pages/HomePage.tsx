@@ -108,7 +108,6 @@ const HomePage: React.FC = () => {
     setQuery,
     clearError,
     loadInitialHistory,
-    refreshTodayDashboard,
     refreshHistory,
     loadMarketReviewHistory,
     refreshMarketReviewHistory,
@@ -328,7 +327,6 @@ const HomePage: React.FC = () => {
 
   useDashboardLifecycle({
     loadInitialHistory,
-    refreshTodayDashboard,
     refreshHistory,
     loadMarketReviewHistory,
     refreshMarketReviewHistory,

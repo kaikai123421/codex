@@ -109,25 +109,25 @@ describe('stockPoolStore', () => {
     vi.mocked(analysisApi.getTasks).mockResolvedValue(createTaskListResponse([]));
   });
 
-  it('loads initial history and auto-selects the first report', async () => {
+  it('loads initial history without auto-selecting report details', async () => {
     vi.mocked(historyApi.getList).mockResolvedValue({
       total: 1,
       page: 1,
       limit: 20,
       items: [historyItem],
     });
-    vi.mocked(historyApi.getDetail).mockResolvedValue(historyReport);
 
     await useStockPoolStore.getState().loadInitialHistory();
 
     const state = useStockPoolStore.getState();
     expect(state.historyItems).toHaveLength(1);
-    expect(state.selectedReport?.meta.stockCode).toBe('600519');
+    expect(state.selectedReport).toBeNull();
+    expect(historyApi.getDetail).not.toHaveBeenCalled();
     expect(state.isLoadingHistory).toBe(false);
     expect(state.isLoadingReport).toBe(false);
   });
 
-  it('auto-selects the latest history report that has a market radar dashboard', async () => {
+  it('keeps market radar dashboard reports in the history list without opening them on startup', async () => {
     const legacyItem = {
       ...historyItem,
       id: 1,
@@ -140,21 +140,6 @@ describe('stockPoolStore', () => {
       queryId: 'dashboard-report',
       hasMarketRadar: true,
     };
-    const dashboardReport = {
-      ...historyReport,
-      meta: {
-        ...historyReport.meta,
-        id: 2,
-        queryId: 'dashboard-report',
-      },
-      details: {
-        contextSnapshot: {
-          marketRadar: {
-            account: { totalAssets: 50585.84 },
-          },
-        },
-      },
-    };
 
     vi.mocked(historyApi.getList).mockResolvedValue({
       total: 2,
@@ -162,12 +147,13 @@ describe('stockPoolStore', () => {
       limit: 20,
       items: [legacyItem, dashboardItem],
     });
-    vi.mocked(historyApi.getDetail).mockResolvedValue(dashboardReport);
 
     await useStockPoolStore.getState().loadInitialHistory();
 
-    expect(historyApi.getDetail).toHaveBeenCalledWith(2);
-    expect(useStockPoolStore.getState().selectedReport?.meta.queryId).toBe('dashboard-report');
+    const state = useStockPoolStore.getState();
+    expect(state.historyItems.map((item) => item.queryId)).toEqual(['legacy-report', 'dashboard-report']);
+    expect(state.selectedReport).toBeNull();
+    expect(historyApi.getDetail).not.toHaveBeenCalled();
   });
 
   it('refreshes today dashboard and selects the returned market radar report', async () => {

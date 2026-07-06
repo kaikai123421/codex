@@ -574,7 +574,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
   },
 
   loadInitialHistory: async () => {
-    await fetchHistory(get, set, { autoSelectFirst: true, reset: true });
+    await fetchHistory(get, set, { reset: true });
   },
 
   refreshHistory: async (silent = false) => {

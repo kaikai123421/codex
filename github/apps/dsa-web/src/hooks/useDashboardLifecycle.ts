@@ -4,7 +4,6 @@ import { useTaskStream } from './useTaskStream';
 
 type UseDashboardLifecycleOptions = {
   loadInitialHistory: () => Promise<void>;
-  refreshTodayDashboard?: () => Promise<void>;
   refreshHistory: (silent?: boolean) => Promise<void>;
   refreshActiveTasks: () => Promise<void>;
   loadStockBar: () => Promise<void>;
@@ -20,7 +19,6 @@ type UseDashboardLifecycleOptions = {
 
 export function useDashboardLifecycle({
   loadInitialHistory,
-  refreshTodayDashboard,
   refreshHistory,
   refreshActiveTasks,
   loadStockBar,
@@ -40,20 +38,11 @@ export function useDashboardLifecycle({
       return;
     }
 
-    void loadInitialHistory()
-      .catch(() => undefined)
-      .then(() => {
-        if (!refreshTodayDashboard) {
-          return undefined;
-        }
-        return refreshTodayDashboard()
-          .then(() => refreshHistory(true))
-          .catch(() => undefined);
-      });
+    void loadInitialHistory().catch(() => undefined);
     void loadStockBar();
     void loadMarketReviewHistory?.();
     void refreshActiveTasks();
-  }, [enabled, loadInitialHistory, loadMarketReviewHistory, loadStockBar, refreshActiveTasks, refreshHistory, refreshTodayDashboard]);
+  }, [enabled, loadInitialHistory, loadMarketReviewHistory, loadStockBar, refreshActiveTasks]);
 
   useEffect(() => {
     if (!enabled) {
