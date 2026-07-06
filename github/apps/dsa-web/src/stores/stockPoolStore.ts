@@ -434,7 +434,9 @@ async function fetchHistory(
     if (requestId !== historyRequestSeq) {
       return null;
     }
-    set({ error: getParsedApiError(error) });
+    if (!silent) {
+      set({ error: getParsedApiError(error) });
+    }
     return null;
   } finally {
     if (requestId === historyRequestSeq) {
@@ -501,7 +503,9 @@ async function fetchMarketReviewHistory(
     if (requestId !== marketReviewHistoryRequestSeq) {
       return null;
     }
-    set({ error: getParsedApiError(error) });
+    if (!silent) {
+      set({ error: getParsedApiError(error) });
+    }
     return null;
   } finally {
     if (requestId === marketReviewHistoryRequestSeq) {
@@ -574,7 +578,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
   },
 
   loadInitialHistory: async () => {
-    await fetchHistory(get, set, { reset: true });
+    await fetchHistory(get, set, { reset: true, silent: true });
   },
 
   refreshHistory: async (silent = false) => {
@@ -607,7 +611,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
   },
 
   loadMarketReviewHistory: async () => {
-    await fetchMarketReviewHistory(get, set, { reset: true });
+    await fetchMarketReviewHistory(get, set, { reset: true, silent: true });
   },
 
   refreshMarketReviewHistory: async (silent = false) => {

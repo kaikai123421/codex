@@ -127,6 +127,17 @@ describe('stockPoolStore', () => {
     expect(state.isLoadingReport).toBe(false);
   });
 
+  it('keeps startup history failures out of the global error banner', async () => {
+    vi.mocked(historyApi.getList).mockRejectedValue(new Error('timeout of 30000ms exceeded'));
+
+    await useStockPoolStore.getState().loadInitialHistory();
+
+    const state = useStockPoolStore.getState();
+    expect(state.error).toBeNull();
+    expect(state.historyItems).toHaveLength(0);
+    expect(state.isLoadingHistory).toBe(false);
+  });
+
   it('keeps market radar dashboard reports in the history list without opening them on startup', async () => {
     const legacyItem = {
       ...historyItem,
