@@ -104,6 +104,7 @@ function createDeferred<T>() {
 
 describe('stockPoolStore', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     useStockPoolStore.getState().resetDashboardState();
     vi.mocked(analysisApi.getTasks).mockResolvedValue(createTaskListResponse([]));
@@ -136,6 +137,22 @@ describe('stockPoolStore', () => {
     expect(state.error).toBeNull();
     expect(state.historyItems).toHaveLength(0);
     expect(state.isLoadingHistory).toBe(false);
+  });
+
+  it('stops showing stock bar loading when the startup request is slow', async () => {
+    vi.useFakeTimers();
+    vi.mocked(historyApi.getStockBarList).mockReturnValue(new Promise(() => undefined));
+
+    const loadPromise = useStockPoolStore.getState().loadStockBar();
+
+    expect(useStockPoolStore.getState().isLoadingStockBar).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    await loadPromise;
+
+    const state = useStockPoolStore.getState();
+    expect(state.isLoadingStockBar).toBe(false);
+    expect(state.stockBarItems).toHaveLength(0);
   });
 
   it('keeps market radar dashboard reports in the history list without opening them on startup', async () => {

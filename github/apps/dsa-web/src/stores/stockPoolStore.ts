@@ -12,6 +12,7 @@ const STOCK_HISTORY_PAGE_SIZE = 20;
 const MARKET_REVIEW_HISTORY_PAGE_SIZE = 10;
 const MARKET_REVIEW_HISTORY_CODE = 'MARKET';
 const PORTFOLIO_DASHBOARD_CODE = 'PORTFOLIO';
+const STOCK_BAR_VISIBLE_TIMEOUT_MS = 8_000;
 
 type SelectionSource = 'manual' | 'autocomplete' | 'import' | 'image';
 
@@ -37,6 +38,7 @@ let analyzeRequestSeq = 0;
 let historyRequestSeq = 0;
 let marketReviewHistoryRequestSeq = 0;
 let stockHistoryRequestSeq = 0;
+let stockBarRequestSeq = 0;
 let activeTaskRequestSeq = 0;
 let activeTaskLocalRevision = 0;
 const dismissedTaskIds = new Set<string>();
@@ -217,6 +219,22 @@ function canOpenStockHistoryTrend(report: AnalysisReport | null): boolean {
     return false;
   }
   return true;
+}
+
+function settleBeforeVisibleTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timeoutId = globalThis.setTimeout(() => resolve(null), timeoutMs);
+    promise.then(
+      (value) => {
+        globalThis.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      () => {
+        globalThis.clearTimeout(timeoutId);
+        resolve(null);
+      },
+    );
+  });
 }
 
 function reportToHistoryItem(report: AnalysisReport): HistoryItem | null {
@@ -960,6 +978,7 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
     historyRequestSeq += 1;
     marketReviewHistoryRequestSeq += 1;
     stockHistoryRequestSeq += 1;
+    stockBarRequestSeq += 1;
     reportRequestSeq = 0;
     analyzeRequestSeq = 0;
     activeTaskRequestSeq += 1;
@@ -971,17 +990,24 @@ export const useStockPoolStore = create<StockPoolState>((set, get) => ({
   loadStockBar: async () => {
     const state = get();
     if (state.isLoadingStockBar) return;
+    const requestId = ++stockBarRequestSeq;
     set({ isLoadingStockBar: true });
     try {
-      const response = await historyApi.getStockBarList({
-        startDate: getRecentStartDate(90),
-        endDate: getTodayInShanghai(),
-      });
+      const response = await settleBeforeVisibleTimeout(
+        historyApi.getStockBarList({
+          startDate: getRecentStartDate(90),
+          endDate: getTodayInShanghai(),
+        }),
+        STOCK_BAR_VISIBLE_TIMEOUT_MS,
+      );
+      if (!response || requestId !== stockBarRequestSeq) return;
       set({ stockBarItems: response.items });
     } catch {
       // keep existing items on error
     } finally {
-      set({ isLoadingStockBar: false });
+      if (requestId === stockBarRequestSeq) {
+        set({ isLoadingStockBar: false });
+      }
     }
   },
 
