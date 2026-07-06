@@ -16,6 +16,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime, date, timedelta, timezone
@@ -63,6 +64,18 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 CURRENT_SCHEMA_VERSION = "2026-06-05-create-all-baseline"
 INTELLIGENCE_ITEM_NULL_SCOPE_VALUE = "__dsa_null_scope__"
+
+
+def _database_connect_timeout_seconds(default: int = 8) -> int:
+    """Return a bounded DB connection timeout so cloud DB hiccups fail fast."""
+    raw = os.getenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, min(30, int(float(raw))))
+    except ValueError:
+        logger.warning("Invalid DATABASE_CONNECT_TIMEOUT_SECONDS=%r, using %s", raw, default)
+        return default
 
 # SQLAlchemy ORM 基类
 Base = declarative_base()
@@ -1139,6 +1152,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 engine_kwargs["connect_args"] = {
                     "timeout": self._sqlite_busy_timeout_ms / 1000,
                 }
+            elif str(db_url).startswith(("postgresql:", "postgresql+")):
+                connect_timeout = _database_connect_timeout_seconds()
+                engine_kwargs["connect_args"] = {
+                    "connect_timeout": connect_timeout,
+                }
+                engine_kwargs["pool_timeout"] = connect_timeout
+                engine_kwargs["pool_recycle"] = 300
 
             # 创建数据库引擎
             created_engine = create_engine(

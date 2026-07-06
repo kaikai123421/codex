@@ -31,6 +31,18 @@ RATE_LIMIT_MAX_FAILURES = 5
 SESSION_MAX_AGE_HOURS_DEFAULT = 24
 MIN_PASSWORD_LEN = 6
 
+
+def _database_connect_timeout_seconds(default: int = 8) -> int:
+    """Return a bounded DB connection timeout for cloud auth storage."""
+    raw = os.getenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, min(30, int(float(raw))))
+    except ValueError:
+        logger.warning("Invalid DATABASE_CONNECT_TIMEOUT_SECONDS=%r, using %s", raw, default)
+        return default
+
 # Lazy-loaded state
 _auth_enabled: Optional[bool] = None
 _session_secret: Optional[bytes] = None
@@ -90,7 +102,13 @@ def _get_auth_engine():
         connect_args = {}
         if db_url.startswith("sqlite"):
             connect_args = {"check_same_thread": False}
-        return create_engine(db_url, pool_pre_ping=True, connect_args=connect_args)
+        engine_kwargs = {"pool_pre_ping": True, "connect_args": connect_args}
+        if db_url.startswith(("postgresql:", "postgresql+")):
+            connect_timeout = _database_connect_timeout_seconds()
+            engine_kwargs["connect_args"] = {"connect_timeout": connect_timeout}
+            engine_kwargs["pool_timeout"] = connect_timeout
+            engine_kwargs["pool_recycle"] = 300
+        return create_engine(db_url, **engine_kwargs)
     except Exception as exc:  # pragma: no cover - defensive import/runtime fallback
         logger.warning("Auth database engine unavailable: %s", exc)
         return None

@@ -240,9 +240,29 @@ def _load_runtime_scheduler_args() -> dict:
     return parsed
 
 
+def _configure_anyio_threadpool() -> None:
+    """Give sync API routes enough room without letting stalled calls own the app."""
+    raw_tokens = os.getenv("API_THREADPOOL_TOKENS", "80").strip()
+    try:
+        total_tokens = max(40, min(160, int(raw_tokens)))
+    except ValueError:
+        logger.warning("Invalid API_THREADPOOL_TOKENS=%r, using 80", raw_tokens)
+        total_tokens = 80
+    try:
+        import anyio.to_thread
+
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        if limiter.total_tokens != total_tokens:
+            limiter.total_tokens = total_tokens
+            logger.info("Configured AnyIO threadpool tokens=%s", total_tokens)
+    except Exception as exc:  # noqa: BLE001 - startup should stay fail-open.
+        logger.warning("Could not configure AnyIO threadpool tokens: %s", exc)
+
+
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     """Initialize and release shared services for the app lifecycle."""
+    _configure_anyio_threadpool()
     runtime_owns_schedule = os.getenv(CLI_SCHEDULER_OWNER_ENV, "").strip().lower() not in {
         "1",
         "true",

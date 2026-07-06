@@ -553,7 +553,7 @@ def trigger_market_review(
     summary="获取分析任务列表",
     description="获取当前所有分析任务，可按状态筛选"
 )
-def get_task_list(
+async def get_task_list(
     status: Optional[str] = Query(
         None,
         description="筛选状态：pending, processing, completed, failed, cancel_requested, cancelled（支持逗号分隔多个）"
