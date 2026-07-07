@@ -7,7 +7,7 @@ services:
     branch: main
     dockerfilePath: docker/Dockerfile
     dockerContext: .
-    dockerCommand: python main.py --serve-only --host 0.0.0.0 --port 8000
+    dockerCommand: python -m uvicorn server:app --host 0.0.0.0 --port 8000 --proxy-headers
     healthCheckPath: /api/v1/health
     autoDeployTrigger: commit
     envVars:
