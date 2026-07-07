@@ -86,7 +86,6 @@ class AnalysisService:
             self.last_error = None
             # 导入分析相关模块
             from src.config import get_config
-            from src.core.pipeline import StockAnalysisPipeline
             from src.enums import ReportType
             
             # 生成 query_id
@@ -123,6 +122,8 @@ class AnalysisService:
                 return self._build_analysis_response(result, query_id, report_type=rt.value)
             
             # 创建分析流水线
+            from src.core.pipeline import StockAnalysisPipeline
+
             pipeline = StockAnalysisPipeline(
                 config=config,
                 query_id=query_id,
