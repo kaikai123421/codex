@@ -129,3 +129,53 @@ def test_agent_chat_stream_forwards_stock_context_to_executor(tmp_path: Path) ->
     assert kwargs["session_id"] == "s1"
     assert kwargs["context"]["stock_code"] == "600519"
     assert kwargs["context"]["stock_name"] == "匿名标的"
+
+
+def test_agent_chat_stream_uses_local_stock_fallback_for_stock_skill(tmp_path: Path) -> None:
+    config = SimpleNamespace(is_agent_available=lambda: True)
+    analysis_payload = {
+        "stock_code": "601138",
+        "stock_name": "工业富联",
+        "report": {
+            "meta": {
+                "stock_code": "601138",
+                "stock_name": "工业富联",
+                "current_price": 64.72,
+                "change_pct": -1.2,
+            },
+            "summary": {
+                "analysis_summary": "轻量分析摘要",
+                "action_label": "观察",
+                "trend_prediction": "震荡",
+                "sentiment_score": 45,
+            },
+            "details": {"technical_analysis": "BBI未取得，不编造。"},
+            "strategy": {
+                "ideal_buy": "等待BBI确认",
+                "secondary_buy": None,
+                "stop_loss": "跌破BBI重新评估",
+                "take_profit": None,
+            },
+        },
+    }
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor") as build_executor:
+                with patch("src.services.analysis_service.AnalysisService") as service_cls:
+                    service_cls.return_value.analyze_stock_lightweight.return_value = analysis_payload
+                    client = TestClient(create_app(static_dir=tmp_path / "static"))
+                    response = client.post(
+                        "/api/v1/agent/chat/stream",
+                        json={
+                            "message": "工业富联怎么看",
+                            "session_id": "s-stock",
+                            "skills": ["stock_analyzer"],
+                        },
+                    )
+
+    assert response.status_code == 200
+    assert '"type": "done"' in response.text
+    assert "工业富联" in response.text
+    assert "BBI" in response.text
+    build_executor.assert_not_called()

@@ -6,6 +6,7 @@ Agent API endpoints.
 import asyncio
 import json
 import logging
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -92,6 +93,128 @@ class AgentModelsResponse(BaseModel):
     models: List[AgentModelDeployment]
 
 
+STOCK_NAME_ALIASES: Dict[str, str] = {
+    "消费电子ETF华夏": "159732",
+    "消费电子ETF": "159732",
+    "消费电子": "159732",
+    "通信ETF国泰": "515880",
+    "通信ETF": "515880",
+    "通信": "515880",
+    "工业富联": "601138",
+    "新易盛": "300502",
+    "京东方A": "000725",
+    "京东方": "000725",
+    "5GETF": "515050",
+    "5G ETF": "515050",
+    "5G": "515050",
+}
+
+
+def _has_stock_skill(skills: Optional[List[str]]) -> bool:
+    return any(str(skill).lower() in {"stock", "stock_analyzer"} for skill in (skills or []))
+
+
+def _extract_local_stock_code(message: str, context: Optional[Dict[str, Any]], skills: Optional[List[str]]) -> Optional[str]:
+    """Extract an A-share/ETF code for dependency-light chat fallback."""
+    normalized = (message or "").strip()
+    compact = re.sub(r"\s+", "", normalized).upper()
+
+    for name, code in sorted(STOCK_NAME_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+        if name.upper().replace(" ", "") in compact:
+            return code
+
+    match = re.search(r"(?<!\d)((?:[0135689]\d{5}|92\d{4}))(?!\d)", normalized)
+    if match:
+        return match.group(1)
+
+    ctx = context or {}
+    ctx_code = str(ctx.get("stock_code") or "").strip()
+    if ctx_code and _has_stock_skill(skills):
+        return ctx_code
+    return None
+
+
+def _format_local_stock_chat_content(payload: Dict[str, Any]) -> str:
+    report = payload.get("report") or {}
+    meta = report.get("meta") or {}
+    summary = report.get("summary") or {}
+    details = report.get("details") or {}
+    strategy = report.get("strategy") or {}
+
+    stock_name = payload.get("stock_name") or meta.get("stock_name") or "标的"
+    stock_code = payload.get("stock_code") or meta.get("stock_code") or ""
+    price = meta.get("current_price")
+    change_pct = meta.get("change_pct")
+    action = summary.get("action_label") or summary.get("operation_advice") or "观察"
+    trend = summary.get("trend_prediction") or "未取得"
+    score = summary.get("sentiment_score")
+
+    price_text = "未取得" if price is None else str(price)
+    change_text = "未取得" if change_pct is None else f"{change_pct}%"
+    score_text = "未取得" if score is None else str(score)
+    lines = [
+        f"## {stock_name}({stock_code}) 轻量问股结论",
+        "",
+        f"- 现价：{price_text}，涨跌幅：{change_text}",
+        f"- 动作：{action}，趋势：{trend}，评分：{score_text}",
+        f"- 摘要：{summary.get('analysis_summary') or '未取得摘要'}",
+        "",
+        "### BBI纪律",
+        "- 本次走云端轻量兜底：不编造 BBI。没有完整日线/周线序列时，只能把 BBI 标为未取得。",
+        "- 真正下单前仍按你的规则确认：价格相对 BBI、量价、资金方向、先试仓、确认后加仓、做错不加仓。",
+    ]
+    if details.get("technical_analysis"):
+        lines.extend(["", "### 技术与量价", str(details["technical_analysis"])])
+    if any(strategy.values()):
+        lines.extend([
+            "",
+            "### 关键位",
+            f"- 理想买点：{strategy.get('ideal_buy') or '未取得'}",
+            f"- 二次买点：{strategy.get('secondary_buy') or '未取得'}",
+            f"- 止损/失效：{strategy.get('stop_loss') or '未取得'}",
+            f"- 止盈：{strategy.get('take_profit') or '未取得'}",
+        ])
+    return "\n".join(lines)
+
+
+def _save_local_stock_chat(session_id: str, message: str, content: str) -> None:
+    try:
+        from src.storage import get_db
+
+        db = get_db()
+        db.save_conversation_message(session_id, "user", message)
+        db.save_conversation_message(session_id, "assistant", content)
+    except Exception as exc:
+        logger.warning("保存轻量问股对话失败: %s", exc, exc_info=True)
+
+
+def _run_local_stock_chat(request: ChatRequest, session_id: str) -> Optional[ChatResponse]:
+    skills = request.effective_skills
+    code = _extract_local_stock_code(request.message, request.context, skills)
+    if not code:
+        return None
+
+    from src.services.analysis_service import AnalysisService
+
+    service = AnalysisService()
+    payload = service.analyze_stock_lightweight(
+        stock_code=code,
+        report_type="brief",
+        report_language=(request.context or {}).get("report_language"),
+    )
+    if payload is None:
+        content = (
+            f"我识别到你在问 {code}，但轻量行情接口也失败了：{service.last_error or '未知错误'}。\n"
+            "这次我不编造结论。先按数据缺失处理，等行情源恢复后再判断。"
+        )
+        _save_local_stock_chat(session_id, request.message, content)
+        return ChatResponse(success=False, content=content, session_id=session_id, error=service.last_error)
+
+    content = _format_local_stock_chat_content(payload)
+    _save_local_stock_chat(session_id, request.message, content)
+    return ChatResponse(success=True, content=content, session_id=session_id, error=None)
+
+
 @router.get("/models", response_model=AgentModelsResponse)
 async def get_agent_models():
     """Get configured Agent model deployments for frontend selection."""
@@ -150,12 +273,15 @@ async def agent_chat(request: ChatRequest):
     """
     Chat with the AI Agent.
     """
+    session_id = request.session_id or str(uuid.uuid4())
+    local_stock_response = await asyncio.to_thread(_run_local_stock_chat, request, session_id)
+    if local_stock_response is not None:
+        return local_stock_response
+
     config = get_config()
     
     if not config.is_agent_available():
         raise HTTPException(status_code=400, detail="Agent mode is not enabled")
-        
-    session_id = request.session_id or str(uuid.uuid4())
     
     try:
         skills = request.effective_skills
@@ -382,11 +508,40 @@ async def agent_chat_stream(request: ChatRequest):
       - done: analysis complete, contains 'content' and 'success'
       - error: error occurred, contains 'message'
     """
+    session_id = request.session_id or str(uuid.uuid4())
+    local_stock_response = await asyncio.to_thread(_run_local_stock_chat, request, session_id)
+    if local_stock_response is not None:
+        async def local_event_generator():
+            yield "data: " + json.dumps({"type": "thinking"}, ensure_ascii=False) + "\n\n"
+            yield "data: " + json.dumps({
+                "type": "tool_done",
+                "tool": "get_realtime_quote",
+                "display_name": TOOL_DISPLAY_NAMES.get("get_realtime_quote", "获取实时行情"),
+                "success": local_stock_response.success,
+            }, ensure_ascii=False) + "\n\n"
+            yield "data: " + json.dumps({
+                "type": "done",
+                "success": local_stock_response.success,
+                "content": local_stock_response.content,
+                "error": local_stock_response.error,
+                "total_steps": 1,
+                "session_id": session_id,
+            }, ensure_ascii=False) + "\n\n"
+
+        return StreamingResponse(
+            local_event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
     config = get_config()
     if not config.is_agent_available():
         raise HTTPException(status_code=400, detail="Agent mode is not enabled")
 
-    session_id = request.session_id or str(uuid.uuid4())
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
 

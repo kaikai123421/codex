@@ -172,6 +172,30 @@ class AnalysisService:
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return os.getenv("RENDER", "").strip().lower() == "true" or bool(os.getenv("RENDER_SERVICE_ID"))
 
+    def analyze_stock_lightweight(
+        self,
+        stock_code: str,
+        report_type: str = "brief",
+        query_id: Optional[str] = None,
+        report_language: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Run the dependency-light quote analysis used by cloud chat fallback."""
+        try:
+            self.last_error = None
+            if query_id is None:
+                query_id = uuid.uuid4().hex
+            normalized_report_language = normalize_report_language(report_language, default="zh") or "zh"
+            result = self._build_lightweight_result(
+                stock_code=stock_code,
+                query_id=query_id,
+                report_language=normalized_report_language,
+            )
+            return self._build_analysis_response(result, query_id, report_type=report_type)
+        except Exception as exc:
+            self.last_error = str(exc)
+            logger.error("轻量分析股票 %s 失败: %s", stock_code, exc, exc_info=True)
+            return None
+
     def _eastmoney_secid(self, stock_code: str) -> str:
         code = str(stock_code).strip()
         if code.startswith(("5", "6", "9")):
