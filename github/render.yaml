@@ -31,8 +31,6 @@ services:
         value: "true"
       - key: ADMIN_SESSION_MAX_AGE_HOURS
         value: "24"
-      - key: DATABASE_URL
-        sync: false
       - key: LOG_DIR
         value: /app/logs
       - key: CORS_ALLOW_ALL
@@ -45,15 +43,3 @@ services:
         value: zh
       - key: SCHEDULE_ENABLED
         value: "false"
-      - key: DEEPSEEK_API_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: TUSHARE_TOKEN
-        sync: false
-      - key: FINNHUB_API_KEY
-        sync: false
-      - key: BRAVE_API_KEYS
-        sync: false
