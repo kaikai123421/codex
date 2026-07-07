@@ -11,6 +11,61 @@ interface ApiErrorAlertProps {
   onDismiss?: () => void;
 }
 
+const MAX_DETAIL_LENGTH = 1800;
+
+function stripHtmlTags(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function summarizeHtmlError(rawMessage: string): string | null {
+  const trimmed = rawMessage.trim();
+  const probe = trimmed.slice(0, 4096).toLowerCase();
+  const looksLikeHtml = (
+    probe.startsWith('<!doctype')
+    || probe.startsWith('<html')
+    || probe.includes('<html')
+    || probe.includes('<title>502</title>')
+    || probe.includes('<body')
+  );
+
+  if (!looksLikeHtml) {
+    return null;
+  }
+
+  const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  const titleText = title ? stripHtmlTags(title) : '';
+  const statusLine = titleText ? `上游返回 HTML 错误页：${titleText}` : '上游返回 HTML 错误页。';
+
+  return [
+    statusLine,
+    '已隐藏原始网页源码，避免把 Render 或上游网关的整页 HTML 展示出来。',
+    '建议：稍后重试；如果持续出现，请检查 Render 日志、模型 API Key、行情源、代理/DNS 与服务健康检查。',
+  ].join('\n');
+}
+
+function getSafeDetails(rawMessage: string): string {
+  const trimmed = rawMessage.trim();
+  const htmlSummary = summarizeHtmlError(trimmed);
+  if (htmlSummary) {
+    return htmlSummary;
+  }
+
+  if (trimmed.length <= MAX_DETAIL_LENGTH) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, MAX_DETAIL_LENGTH)}\n\n... 已截断 ${trimmed.length - MAX_DETAIL_LENGTH} 个字符`;
+}
+
 export const ApiErrorAlert: React.FC<ApiErrorAlertProps> = ({
   error,
   className = '',
@@ -20,7 +75,8 @@ export const ApiErrorAlert: React.FC<ApiErrorAlertProps> = ({
   onDismiss,
 }) => {
   const { t } = useUiLanguage();
-  const showDetails = error.rawMessage.trim() && error.rawMessage.trim() !== error.message.trim();
+  const details = getSafeDetails(error.rawMessage);
+  const showDetails = Boolean(details && details !== error.message.trim());
 
   return (
     <div
@@ -46,7 +102,7 @@ export const ApiErrorAlert: React.FC<ApiErrorAlertProps> = ({
         <details className="mt-3 rounded-lg border border-subtle bg-surface-2 px-3 py-2">
           <summary className="cursor-pointer text-xs text-[hsl(var(--color-danger-alert-text))] opacity-90">{t('common.details')}</summary>
           <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-[hsl(var(--color-danger-alert-text))] opacity-85">
-            {error.rawMessage}
+            {details}
           </pre>
         </details>
       ) : null}

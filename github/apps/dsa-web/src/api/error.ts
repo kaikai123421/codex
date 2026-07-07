@@ -129,6 +129,68 @@ function includesAny(haystack: string, needles: string[]): boolean {
   return needles.some((needle) => haystack.includes(needle.toLowerCase()));
 }
 
+const MAX_RAW_API_MESSAGE_LENGTH = 2000;
+
+function stripHtmlTags(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function summarizeHtmlPayload(rawMessage: string, status?: number, statusText?: string): string | null {
+  const trimmed = rawMessage.trim();
+  const probe = trimmed.slice(0, 4096).toLowerCase();
+  const looksLikeHtml = (
+    probe.startsWith('<!doctype')
+    || probe.startsWith('<html')
+    || probe.includes('<html')
+    || probe.includes('<title>502</title>')
+    || probe.includes('<body')
+  );
+
+  if (!looksLikeHtml) {
+    return null;
+  }
+
+  const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  const titleText = title ? stripHtmlTags(title) : '';
+  const statusParts = [
+    status ? `HTTP ${status}` : null,
+    statusText?.trim() || null,
+    titleText || null,
+  ].filter(Boolean);
+  const statusLine = statusParts.length > 0
+    ? `上游返回 HTML 错误页（${statusParts.join(' / ')}）。`
+    : '上游返回 HTML 错误页。';
+
+  return [
+    statusLine,
+    '已隐藏原始网页源码，避免把 Render 或上游网关的整页 HTML 写入错误记录。',
+    '请检查 Render 日志、模型 API Key、行情源、代理/DNS 与服务健康检查。',
+  ].join('\n');
+}
+
+function sanitizeRawApiMessage(rawMessage: string, status?: number, statusText?: string): string {
+  const trimmed = rawMessage.trim();
+  const htmlSummary = summarizeHtmlPayload(trimmed, status, statusText);
+  if (htmlSummary) {
+    return htmlSummary;
+  }
+
+  if (trimmed.length <= MAX_RAW_API_MESSAGE_LENGTH) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, MAX_RAW_API_MESSAGE_LENGTH)}\n\n... 已截断 ${trimmed.length - MAX_RAW_API_MESSAGE_LENGTH} 个字符`;
+}
+
 function extractValidationDetail(detail: unknown): string | null {
   if (!Array.isArray(detail)) {
     return null;
@@ -297,9 +359,10 @@ export function parseApiError(error: unknown): ParsedApiError {
   const errorMessage = getErrorMessage(error);
   const causeMessage = getCauseMessage(error);
   const code = getErrorCode(error);
-  const rawMessage = pickString(payloadText, response?.statusText, errorMessage, causeMessage, code)
+  const rawPayloadMessage = pickString(payloadText, response?.statusText, errorMessage, causeMessage, code)
     ?? '请求未成功完成，请稍后重试。';
-  const matchText = buildMatchText([rawMessage, errorMessage, causeMessage, code, errorCode, response?.statusText]);
+  const rawMessage = sanitizeRawApiMessage(rawPayloadMessage, status, response?.statusText);
+  const matchText = buildMatchText([rawPayloadMessage, rawMessage, errorMessage, causeMessage, code, errorCode, response?.statusText]);
 
   if (includesAny(matchText, ['agent mode is not enabled', 'agent_mode'])) {
     return createParsedApiError({
