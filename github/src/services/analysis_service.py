@@ -166,8 +166,10 @@ class AnalysisService:
             reset_run_diagnostic_context(locals().get("diag_token"))
 
     def _render_light_mode_enabled(self) -> bool:
-        value = os.getenv("RENDER_ANALYSIS_LIGHT_MODE", "").strip().lower()
-        return value in {"1", "true", "yes", "on"}
+        value = os.getenv("RENDER_ANALYSIS_LIGHT_MODE")
+        if value is not None:
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return os.getenv("RENDER", "").strip().lower() == "true" or bool(os.getenv("RENDER_SERVICE_ID"))
 
     def _eastmoney_secid(self, stock_code: str) -> str:
         code = str(stock_code).strip()
