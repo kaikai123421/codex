@@ -1014,7 +1014,7 @@ class DecisionSignalRecord(Base):
         Index('ix_decision_signal_stock_status_time', 'stock_code', 'status', 'created_at'),
         Index('ix_decision_signal_market_status_time', 'market', 'status', 'created_at'),
         Index(
-            'ix_decision_signal_report_type_market_stock_action_horizon_phase',
+            'ix_dec_signal_report_lookup',
             'source_report_id',
             'source_type',
             'market',
@@ -1024,7 +1024,7 @@ class DecisionSignalRecord(Base):
             'market_phase',
         ),
         Index(
-            'ix_decision_signal_trace_type_market_stock_action_horizon_phase',
+            'ix_dec_signal_trace_lookup',
             'trace_id',
             'source_type',
             'market',
