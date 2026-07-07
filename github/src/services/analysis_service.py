@@ -12,6 +12,9 @@
 
 import logging
 import copy
+import json
+import os
+import urllib.request
 import uuid
 from typing import Optional, Dict, Any, Callable, List
 
@@ -105,6 +108,19 @@ class AnalysisService:
             if normalized_report_language:
                 config = copy.copy(config)
                 config.report_language = normalized_report_language
+
+            rt = ReportType.from_str(report_type)
+            if self._render_light_mode_enabled():
+                if progress_callback:
+                    progress_callback(35, "云端轻量模式：正在读取行情")
+                result = self._build_lightweight_result(
+                    stock_code=stock_code,
+                    query_id=query_id,
+                    report_language=normalized_report_language or "zh",
+                )
+                if progress_callback:
+                    progress_callback(95, "云端轻量模式：生成基础判断")
+                return self._build_analysis_response(result, query_id, report_type=rt.value)
             
             # 创建分析流水线
             pipeline = StockAnalysisPipeline(
@@ -148,6 +164,170 @@ class AnalysisService:
             return None
         finally:
             reset_run_diagnostic_context(locals().get("diag_token"))
+
+    def _render_light_mode_enabled(self) -> bool:
+        value = os.getenv("RENDER_ANALYSIS_LIGHT_MODE", "").strip().lower()
+        return value in {"1", "true", "yes", "on"}
+
+    def _eastmoney_secid(self, stock_code: str) -> str:
+        code = str(stock_code).strip()
+        if code.startswith(("5", "6", "9")):
+            return f"1.{code}"
+        return f"0.{code}"
+
+    def _safe_float(self, value: Any) -> Optional[float]:
+        try:
+            if value is None or value == "-":
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _fetch_light_quote(self, stock_code: str) -> Dict[str, Any]:
+        fields = "f12,f14,f2,f3,f4,f5,f6,f8,f10,f15,f16,f17,f18,f62"
+        url = (
+            "https://push2.eastmoney.com/api/qt/ulist.np/get"
+            f"?fltt=2&invt=2&fields={fields}&secids={self._eastmoney_secid(stock_code)}"
+        )
+        timeout = float(os.getenv("LIGHT_ANALYSIS_QUOTE_TIMEOUT", "5") or "5")
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 DSA-LightMode/1.0",
+                    "Referer": "https://quote.eastmoney.com/",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+            rows = ((payload or {}).get("data") or {}).get("diff") or []
+            if not rows:
+                return {"ok": False, "error": "empty quote response", "source": "eastmoney_push2"}
+            row = rows[0]
+            return {
+                "ok": True,
+                "source": "eastmoney_push2",
+                "code": str(row.get("f12") or stock_code),
+                "name": row.get("f14") or f"股票{stock_code}",
+                "price": self._safe_float(row.get("f2")),
+                "change_pct": self._safe_float(row.get("f3")),
+                "change": self._safe_float(row.get("f4")),
+                "volume": self._safe_float(row.get("f5")),
+                "amount": self._safe_float(row.get("f6")),
+                "turnover": self._safe_float(row.get("f8")),
+                "volume_ratio": self._safe_float(row.get("f10")),
+                "high": self._safe_float(row.get("f15")),
+                "low": self._safe_float(row.get("f16")),
+                "open": self._safe_float(row.get("f17")),
+                "prev_close": self._safe_float(row.get("f18")),
+                "main_fund": self._safe_float(row.get("f62")),
+            }
+        except Exception as exc:
+            logger.warning("light quote fetch failed for %s: %s", stock_code, exc)
+            return {"ok": False, "error": str(exc), "source": "eastmoney_push2"}
+
+    def _build_lightweight_result(
+        self,
+        stock_code: str,
+        query_id: Optional[str],
+        report_language: str = "zh",
+    ) -> Any:
+        from src.analyzer import AnalysisResult
+
+        quote = self._fetch_light_quote(stock_code)
+        price = quote.get("price") if quote.get("ok") else None
+        change_pct = quote.get("change_pct") if quote.get("ok") else None
+        name = quote.get("name") if quote.get("ok") else f"股票{stock_code}"
+        score = 50
+        trend = "震荡"
+        if isinstance(change_pct, (int, float)):
+            if change_pct >= 3:
+                score, trend = 58, "偏强震荡"
+            elif change_pct <= -3:
+                score, trend = 42, "偏弱震荡"
+            elif change_pct > 0:
+                score, trend = 53, "小幅修复"
+            elif change_pct < 0:
+                score, trend = 47, "小幅承压"
+
+        if quote.get("ok"):
+            quote_line = (
+                f"{name}({stock_code}) 现价 {price if price is not None else '未取得'}，"
+                f"涨跌幅 {change_pct if change_pct is not None else '未取得'}%。"
+            )
+            data_line = (
+                f"成交额 {quote.get('amount') if quote.get('amount') is not None else '未取得'}，"
+                f"换手 {quote.get('turnover') if quote.get('turnover') is not None else '未取得'}，"
+                f"主力资金 {quote.get('main_fund') if quote.get('main_fund') is not None else '未取得'}。"
+            )
+        else:
+            quote_line = f"{name}({stock_code}) 云端未能取得实时行情。"
+            data_line = f"行情接口失败：{quote.get('error') or 'unknown error'}。"
+
+        summary = (
+            f"云端轻量模式：{quote_line} 当前线上环境为了避免 Render 免费实例被完整分析链路拖成 502，"
+            "本次只输出行情驱动的基础判断。完整 report 仍应以 BBI、日线/周线、资金流、持仓矩阵和你的交易纪律综合确认。"
+        )
+        technical = (
+            f"{quote_line} {data_line} BBI：轻量模式不编造 BBI，未取得日线序列时不做 BBI 结论；"
+            "正式交易判断必须等待 BBI/均线结构和量价确认。"
+        )
+        dashboard = {
+            "core_conclusion": {
+                "one_sentence": summary,
+                "position_advice": {
+                    "has_position": "先观望，不因轻量行情结果追涨杀跌；等 BBI 和资金确认。",
+                    "no_position": "未持仓先等确认，不在数据不完整时重仓试错。",
+                },
+            },
+            "battle_plan": {
+                "sniper_points": {
+                    "ideal_buy": "需完整 BBI/量价确认",
+                    "secondary_buy": "回踩不破关键均线且资金回流",
+                    "stop_loss": "跌破 BBI 或放量破位时重新评估",
+                    "take_profit": "大涨后按计划取利润，不临盘情绪化",
+                },
+                "action_checklist": [
+                    "确认 BBI 位置",
+                    "确认量价是否背离",
+                    "确认主力资金方向",
+                    "确认是否符合先试仓、确认后加仓",
+                ],
+            },
+        }
+        risk = (
+            "这是云端稳定优先的基础结果，不构成投资建议。若页面显示数据缺失，按未验证处理；"
+            "你的规则仍然优先：先试仓，确认后加仓，买强不买弱，做错不加仓。"
+        )
+        return AnalysisResult(
+            code=str(stock_code),
+            name=str(name),
+            sentiment_score=score,
+            trend_prediction=trend,
+            operation_advice="观望",
+            decision_type="hold",
+            confidence_level="低",
+            report_language=report_language,
+            action="watch",
+            dashboard=dashboard,
+            technical_analysis=technical,
+            ma_analysis="云端轻量模式未运行完整均线/BBI计算。",
+            volume_analysis=data_line,
+            fundamental_analysis="云端轻量模式未运行基本面链路。",
+            news_summary="云端轻量模式未抓取新闻，避免外部依赖导致 502。",
+            analysis_summary=summary,
+            key_points="轻量模式只用于保证线上可用；深度判断必须回到 BBI、资金、量价和持仓纪律。",
+            risk_warning=risk,
+            buy_reason="数据不完整时不主动给买入结论。",
+            market_snapshot=quote,
+            search_performed=False,
+            data_sources="eastmoney_push2_quote; render_light_mode",
+            success=True,
+            current_price=price,
+            change_pct=change_pct,
+            model_used="render-lightweight-safe-mode",
+            query_id=query_id,
+        )
     
     def _build_analysis_response(
         self, 

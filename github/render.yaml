@@ -45,6 +45,10 @@ services:
         value: "false"
       - key: MAX_WORKERS
         value: "1"
+      - key: RENDER_ANALYSIS_LIGHT_MODE
+        value: "true"
+      - key: LIGHT_ANALYSIS_QUOTE_TIMEOUT
+        value: "5"
       - key: EFINANCE_CALL_TIMEOUT
         value: "8"
       - key: EFINANCE_MAX_CONCURRENT_CALLS
