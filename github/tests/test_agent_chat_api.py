@@ -348,6 +348,63 @@ def test_agent_chat_stream_returns_degraded_done_when_executor_raises_502(tmp_pa
     assert "降级回答" in response.text
 
 
+def test_agent_chat_returns_degraded_response_when_executor_returns_empty_content(tmp_path: Path) -> None:
+    executor = MagicMock()
+    executor.chat.return_value = SimpleNamespace(success=True, content="   ", error=None)
+    config = SimpleNamespace(is_agent_available=lambda: True)
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor", return_value=executor):
+                client = TestClient(create_app(static_dir=tmp_path / "static"))
+                response = client.post(
+                    "/api/v1/agent/chat",
+                    json={
+                        "message": "601138 how is it now",
+                        "session_id": "s-stock-empty-json",
+                        "skills": ["stock_analyzer"],
+                    },
+                )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["content"].strip()
+    assert payload["content"] != "无内容"
+    assert payload["error"] == "empty_response: analysis_finished_without_content"
+
+
+def test_agent_chat_stream_returns_degraded_done_when_executor_returns_empty_content(tmp_path: Path) -> None:
+    executor = MagicMock()
+    executor.chat.return_value = SimpleNamespace(
+        success=True,
+        content="无内容",
+        error=None,
+        total_steps=3,
+    )
+    config = SimpleNamespace(is_agent_available=lambda: True)
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor", return_value=executor):
+                client = TestClient(create_app(static_dir=tmp_path / "static"))
+                response = client.post(
+                    "/api/v1/agent/chat/stream",
+                    json={
+                        "message": "601138 how is it now",
+                        "session_id": "s-stock-empty-stream",
+                        "skills": ["stock_analyzer"],
+                    },
+                )
+
+    assert response.status_code == 200
+    assert '"type": "done"' in response.text
+    assert '"success": false' in response.text
+    assert "empty_response" in response.text
+    assert "analysis_finished_without_content" in response.text
+    assert "无内容" not in response.text
+
+
 def test_agent_chat_returns_degraded_response_without_raw_html_when_executor_raises_502(tmp_path: Path) -> None:
     executor = MagicMock()
     executor.chat.side_effect = RuntimeError(

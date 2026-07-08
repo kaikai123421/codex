@@ -167,7 +167,12 @@ describe('agentChatStore.startStream', () => {
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
-    expect(state.messages).toHaveLength(1);
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]).toMatchObject({
+      role: 'assistant',
+    });
+    expect(state.messages[1].content.length).toBeGreaterThan(20);
+    expect(state.messages[1].content).not.toBe('无内容');
     expect(state.chatError).toMatchObject({
       title: '连接上游服务超时',
       message: '服务端访问外部依赖时超时，请稍后重试，或检查当前网络与代理设置。',
@@ -189,7 +194,12 @@ describe('agentChatStore.startStream', () => {
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
-    expect(state.messages).toHaveLength(1);
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]).toMatchObject({
+      role: 'assistant',
+    });
+    expect(state.messages[1].content.length).toBeGreaterThan(20);
+    expect(state.messages[1].content).not.toBe('无内容');
     expect(state.chatError).toMatchObject({
       title: '请求失败',
       message: '分析出错',
@@ -250,6 +260,29 @@ describe('agentChatStore.startStream', () => {
     expect(state.chatError).toMatchObject({
       category: 'upstream_network',
       rawMessage: 'upstream_unavailable: HTTP 502',
+    });
+  });
+
+  it('shows a degraded assistant message when the stream request fails before a done event', async () => {
+    vi.mocked(agentApi.chatStream).mockRejectedValue(
+      new Error('upstream returned HTML error page (HTTP 502 / 502)'),
+    );
+
+    await useAgentChatStore
+      .getState()
+      .startStream({ message: '601138 how is it now', session_id: 'session-test' }, { skillName: 'stock_analyzer' });
+
+    const state = useAgentChatStore.getState();
+    expect(state.loading).toBe(false);
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]).toMatchObject({
+      role: 'assistant',
+    });
+    expect(state.messages[1].content).toContain('这次分析没有生成有效内容');
+    expect(state.messages[1].content).not.toBe('无内容');
+    expect(state.chatError).toMatchObject({
+      category: 'upstream_network',
+      rawMessage: 'upstream returned HTML error page (HTTP 502 / 502)',
     });
   });
 });

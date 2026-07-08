@@ -51,7 +51,17 @@ const EMPTY_ANALYSIS_FALLBACK =
 
 function isMeaninglessAssistantContent(value: string): boolean {
   const normalized = value.trim();
-  return normalized === '' || normalized === '无内容' || normalized === '(无内容)';
+  const lower = normalized.toLowerCase();
+  return (
+    normalized === '' ||
+    normalized === '无内容' ||
+    normalized === '(无内容)' ||
+    lower === 'no content' ||
+    lower === '(no content)' ||
+    lower === 'none' ||
+    lower === 'null' ||
+    lower === 'analysis_finished_without_content'
+  );
 }
 
 function buildFallbackAssistantContent(error?: ParsedApiError | null): string {
@@ -279,6 +289,8 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           ],
     }));
 
+    const currentProgressSteps: ProgressStep[] = [];
+
     try {
       const response = await agentApi.chatStream(payload, { signal: ac.signal });
       const reader = response.body!.getReader();
@@ -286,33 +298,32 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       let buf = '';
       let finalContent: string | null = null;
       let streamFailureError: ParsedApiError | null = null;
-      const currentProgressSteps: ProgressStep[] = [];
-        const processLine = (line: string) => {
-          if (!line.startsWith('data: ')) return;
+      const processLine = (line: string) => {
+        if (!line.startsWith('data: ')) return;
 
-          const event = JSON.parse(line.slice(6)) as ProgressStep;
-          if (event.type === 'done') {
-            const doneEvent = event as unknown as StreamFailureEvent;
-            const doneContent = typeof doneEvent.content === 'string'
-              ? doneEvent.content.trim()
-              : '';
-            const meaningfulDoneContent = isMeaninglessAssistantContent(doneContent) ? '' : doneContent;
-            if (doneEvent.success === false) {
-              streamFailureError = getStreamFailureError(doneEvent, '大模型调用出错，请检查 API Key 配置');
-              if (meaningfulDoneContent) {
-                finalContent = meaningfulDoneContent;
-                return;
-              }
-              finalContent = buildFallbackAssistantContent(streamFailureError);
+        const event = JSON.parse(line.slice(6)) as ProgressStep;
+        if (event.type === 'done') {
+          const doneEvent = event as unknown as StreamFailureEvent;
+          const doneContent = typeof doneEvent.content === 'string'
+            ? doneEvent.content.trim()
+            : '';
+          const meaningfulDoneContent = isMeaninglessAssistantContent(doneContent) ? '' : doneContent;
+          if (doneEvent.success === false) {
+            streamFailureError = getStreamFailureError(doneEvent, '大模型调用出错，请检查 API Key 配置');
+            if (meaningfulDoneContent) {
+              finalContent = meaningfulDoneContent;
               return;
             }
-            finalContent = meaningfulDoneContent;
+            finalContent = buildFallbackAssistantContent(streamFailureError);
             return;
           }
+          finalContent = meaningfulDoneContent;
+          return;
+        }
 
-          if (event.type === 'error') {
-            throw getStreamFailureError(event as unknown as StreamFailureEvent, '分析出错');
-          }
+        if (event.type === 'error') {
+          throw getStreamFailureError(event as unknown as StreamFailureEvent, '分析出错');
+        }
 
         currentProgressSteps.push(event);
         set((s) => ({ progressSteps: [...s.progressSteps, event] }));
@@ -386,8 +397,26 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       if (error instanceof Error && error.name === 'AbortError') {
         // User-initiated abort: silent, no badge
       } else {
-        set({ chatError: getParsedApiError(error) });
-        const { currentRoute } = get();
+        const parsedError = getParsedApiError(error);
+        set({ chatError: parsedError });
+        const { sessionId: currentSessionId, currentRoute } = get();
+        if (currentSessionId === streamSessionId && !ac.signal.aborted) {
+          set((s) => ({
+            messages: [
+              ...s.messages,
+              {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: buildFallbackAssistantContent(parsedError),
+                skills: payload.skills,
+                skill: payload.skills?.[0],
+                skillNames,
+                skillName,
+                thinkingSteps: [...currentProgressSteps],
+              },
+            ],
+          }));
+        }
         if (currentRoute !== '/chat') {
           set({ completionBadge: true });
         }

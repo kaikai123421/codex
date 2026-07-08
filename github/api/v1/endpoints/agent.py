@@ -152,6 +152,60 @@ def _build_degraded_agent_response(session_id: str, exc: Exception) -> ChatRespo
     )
 
 
+def _is_meaningless_agent_content(content: Any) -> bool:
+    if content is None:
+        return True
+    normalized = str(content).strip()
+    if not normalized:
+        return True
+    normalized_lower = normalized.lower()
+    return normalized_lower in {
+        "无内容",
+        "(无内容)",
+        "no content",
+        "(no content)",
+        "none",
+        "null",
+        "analysis_finished_without_content",
+    }
+
+
+def _coerce_agent_result_to_response(result: Any, session_id: str) -> ChatResponse:
+    """Normalize empty executor results into a user-visible degraded response."""
+    content = getattr(result, "content", "")
+    success = bool(getattr(result, "success", False))
+    error = getattr(result, "error", None)
+
+    if _is_meaningless_agent_content(content):
+        reason = str(error or "analysis_finished_without_content")
+        degraded = _build_degraded_agent_response(session_id, RuntimeError(reason))
+        degraded.error = (
+            "empty_response: analysis_finished_without_content"
+            if not error
+            else f"empty_response: {_summarize_exception_for_user(RuntimeError(reason))[:220]}"
+        )
+        return degraded
+
+    return ChatResponse(
+        success=success,
+        content=str(content),
+        session_id=session_id,
+        error=error,
+    )
+
+
+def _coerce_agent_result_to_stream_done(result: Any, session_id: str) -> Dict[str, Any]:
+    response = _coerce_agent_result_to_response(result, session_id)
+    return {
+        "type": "done",
+        "success": response.success,
+        "content": response.content,
+        "error": response.error,
+        "total_steps": int(getattr(result, "total_steps", 0) or 0),
+        "session_id": session_id,
+    }
+
+
 def _extract_local_stock_code(message: str, context: Optional[Dict[str, Any]], skills: Optional[List[str]]) -> Optional[str]:
     """Extract an A-share/ETF code for dependency-light chat fallback."""
     normalized = (message or "").strip()
@@ -341,12 +395,7 @@ async def agent_chat(request: ChatRequest):
                                   context=ctx),
         )
 
-        return ChatResponse(
-            success=result.success,
-            content=result.content,
-            session_id=session_id,
-            error=result.error
-        )
+        return _coerce_agent_result_to_response(result, session_id)
             
     except Exception as e:
         logger.error(f"Agent chat API failed: {e}")
@@ -610,14 +659,7 @@ async def agent_chat_stream(request: ChatRequest):
                 context=stream_ctx,
             )
             asyncio.run_coroutine_threadsafe(
-                queue.put({
-                    "type": "done",
-                    "success": result.success,
-                    "content": result.content,
-                    "error": result.error,
-                    "total_steps": result.total_steps,
-                    "session_id": session_id,
-                }),
+                queue.put(_coerce_agent_result_to_stream_done(result, session_id)),
                 loop,
             )
         except Exception as exc:
@@ -643,7 +685,15 @@ async def agent_chat_stream(request: ChatRequest):
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=300.0)
                 except asyncio.TimeoutError:
-                    yield "data: " + json.dumps({"type": "error", "message": "分析超时"}, ensure_ascii=False) + "\n\n"
+                    degraded = _build_degraded_agent_response(session_id, TimeoutError("analysis_timeout"))
+                    yield "data: " + json.dumps({
+                        "type": "done",
+                        "success": False,
+                        "content": degraded.content,
+                        "error": degraded.error,
+                        "total_steps": 0,
+                        "session_id": session_id,
+                    }, ensure_ascii=False) + "\n\n"
                     break
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 if event.get("type") in ("done", "error"):
