@@ -13,10 +13,12 @@ from unittest.mock import patch
 # but restore sys.modules immediately to avoid cross-test pollution.
 _orig_data_provider_base = sys.modules.get("data_provider.base")
 _orig_data_provider = sys.modules.get("data_provider")
+_orig_src_config = sys.modules.get("src.config")
 
 if _orig_data_provider_base is None:
     base_mod = types.ModuleType("data_provider.base")
     base_mod.canonical_stock_code = lambda x: (x or "").strip().upper()
+    base_mod.is_bse_code = lambda x: str(x or "").strip().startswith(("4", "8"))
     base_mod.normalize_stock_code = lambda x: (x or "").strip().upper().removesuffix(".SH").removesuffix(".SZ")
     sys.modules["data_provider.base"] = base_mod
 
@@ -25,7 +27,17 @@ if _orig_data_provider is None:
     pkg_mod.base = sys.modules["data_provider.base"]
     sys.modules["data_provider"] = pkg_mod
 
+if _orig_src_config is None:
+    config_mod = types.ModuleType("src.config")
+    config_mod.get_config = lambda: SimpleNamespace(max_workers=2)
+    sys.modules["src.config"] = config_mod
+
 from src.services.task_queue import AnalysisTaskQueue, get_task_queue, _dedupe_stock_code_key
+
+if _orig_src_config is None:
+    import src as _src_pkg
+
+    setattr(_src_pkg, "config", sys.modules["src.config"])
 
 if _orig_data_provider_base is None:
     sys.modules.pop("data_provider.base", None)
@@ -97,7 +109,11 @@ class TaskQueueConfigSyncTestCase(unittest.TestCase):
         self.assertEqual(queue.max_workers, 2)
 
     def test_dedupe_stock_code_key_normalizes_market_suffix(self) -> None:
-        self.assertEqual(_dedupe_stock_code_key(" 600519.sh "), "600519")
+        with patch(
+            "src.services.task_queue.resolve_index_stock_code_for_analysis",
+            side_effect=lambda code: code,
+        ):
+            self.assertEqual(_dedupe_stock_code_key(" 600519.sh "), "600519")
 
     def test_get_task_queue_defers_sync_when_busy(self) -> None:
         queue = AnalysisTaskQueue(max_workers=3)

@@ -49,6 +49,23 @@ def _dedupe_stock_code_key(stock_code: str) -> str:
     return resolve_index_stock_code_for_analysis(normalize_stock_code(stock_code))
 
 
+def _should_use_lightweight_analysis_task(
+    *,
+    query_source: Optional[str],
+    skills: Optional[List[str]],
+) -> bool:
+    """
+    Route ordinary web/API analysis tasks through the stable lightweight path.
+
+    Strategy-driven tasks keep the full pipeline because skills may require
+    broader context, model calls, and report generation.
+    """
+    if skills:
+        return False
+    source = (query_source or "api").strip().lower()
+    return source in {"api", "web", "ui"}
+
+
 class TaskStatus(str, Enum):
     """Task status enumeration"""
     PENDING = "pending"        # Waiting for execution
@@ -716,20 +733,29 @@ class AnalysisTaskQueue:
                     trigger_source=query_source,
                     event_sink=lambda event: self.append_task_flow_event(task_id, event),
                 )
-            result = service.analyze_stock(
-                stock_code=stock_code,
-                report_type=report_type,
-                force_refresh=force_refresh,
-                query_id=task_id,
-                trace_id=trace_id,
-                send_notification=notify,
-                progress_callback=_on_progress,
-                skills=skills,
-                analysis_phase=analysis_phase,
-                query_source=query_source,
-                portfolio_context=portfolio_context,
-                report_language=report_language,
-            )
+            if _should_use_lightweight_analysis_task(query_source=query_source, skills=skills):
+                self.update_task_progress(task_id, 35, "正在读取稳定行情数据")
+                result = service.analyze_stock_lightweight(
+                    stock_code=stock_code,
+                    report_type=report_type,
+                    query_id=task_id,
+                    report_language=report_language,
+                )
+            else:
+                result = service.analyze_stock(
+                    stock_code=stock_code,
+                    report_type=report_type,
+                    force_refresh=force_refresh,
+                    query_id=task_id,
+                    trace_id=trace_id,
+                    send_notification=notify,
+                    progress_callback=_on_progress,
+                    skills=skills,
+                    analysis_phase=analysis_phase,
+                    query_source=query_source,
+                    portfolio_context=portfolio_context,
+                    report_language=report_language,
+                )
             reset_run_diagnostic_context(diag_token)
             diag_token = None
             
