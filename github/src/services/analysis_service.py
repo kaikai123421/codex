@@ -351,7 +351,7 @@ class AnalysisService:
             data_line = f"行情接口失败：{quote.get('error') or 'unknown error'}。"
 
         summary = (
-            f"云端轻量模式：{quote_line} 当前线上环境为了避免 Render 免费实例被完整分析链路拖成 502，"
+            f"云端轻量模式：{quote_line} 当前线上环境为了避免长耗时外部依赖影响稳定性，"
             "本次只输出行情驱动的基础判断。完整 report 仍应以 BBI、日线/周线、资金流、持仓矩阵和你的交易纪律综合确认。"
         )
         technical = (
@@ -400,7 +400,7 @@ class AnalysisService:
             ma_analysis="云端轻量模式未运行完整均线/BBI计算。",
             volume_analysis=data_line,
             fundamental_analysis="云端轻量模式未运行基本面链路。",
-            news_summary="云端轻量模式未抓取新闻，避免外部依赖导致 502。",
+            news_summary="云端轻量模式未抓取新闻，避免外部依赖影响响应稳定性。",
             analysis_summary=summary,
             key_points="轻量模式只用于保证线上可用；深度判断必须回到 BBI、资金、量价和持仓纪律。",
             risk_warning=risk,
