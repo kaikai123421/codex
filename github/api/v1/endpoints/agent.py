@@ -53,11 +53,11 @@ def _get_agent_chat_sync_timeout_seconds() -> float:
 
 
 def _get_agent_chat_stream_idle_timeout_seconds() -> float:
-    raw = os.getenv("AGENT_CHAT_STREAM_IDLE_TIMEOUT_SECONDS", "90")
+    raw = os.getenv("AGENT_CHAT_STREAM_IDLE_TIMEOUT_SECONDS", "30")
     try:
         timeout = float(raw)
     except (TypeError, ValueError):
-        timeout = 90.0
+        timeout = 30.0
     return max(5.0, timeout)
 
 class ChatRequest(BaseModel):
