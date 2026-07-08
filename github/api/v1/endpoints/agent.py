@@ -114,6 +114,27 @@ def _has_stock_skill(skills: Optional[List[str]]) -> bool:
     return any(str(skill).lower() in {"stock", "stock_analyzer"} for skill in (skills or []))
 
 
+def _should_use_local_stock_chat(request: ChatRequest) -> bool:
+    context = request.context or {}
+    return bool(context.get("use_lightweight_stock_fallback") or context.get("force_lightweight_stock"))
+
+
+def _build_degraded_agent_response(session_id: str, exc: Exception) -> ChatResponse:
+    error_text = str(exc) or exc.__class__.__name__
+    content = (
+        "degraded: full analysis could not complete because an external dependency failed.\n"
+        "I did not fabricate a stock conclusion. Please retry later, or use the latest quote/K-line shown in the app "
+        "as a temporary reference.\n"
+        f"reason: {error_text}"
+    )
+    return ChatResponse(
+        success=False,
+        content=content,
+        session_id=session_id,
+        error=f"upstream_unavailable: {error_text}",
+    )
+
+
 def _extract_local_stock_code(message: str, context: Optional[Dict[str, Any]], skills: Optional[List[str]]) -> Optional[str]:
     """Extract an A-share/ETF code for dependency-light chat fallback."""
     normalized = (message or "").strip()
@@ -274,9 +295,10 @@ async def agent_chat(request: ChatRequest):
     Chat with the AI Agent.
     """
     session_id = request.session_id or str(uuid.uuid4())
-    local_stock_response = await asyncio.to_thread(_run_local_stock_chat, request, session_id)
-    if local_stock_response is not None:
-        return local_stock_response
+    if _should_use_local_stock_chat(request):
+        local_stock_response = await asyncio.to_thread(_run_local_stock_chat, request, session_id)
+        if local_stock_response is not None:
+            return local_stock_response
 
     config = get_config()
     
@@ -312,7 +334,7 @@ async def agent_chat(request: ChatRequest):
     except Exception as e:
         logger.error(f"Agent chat API failed: {e}")
         logger.exception("Agent chat error details:")
-        raise HTTPException(status_code=500, detail=str(e))
+        return _build_degraded_agent_response(session_id, e)
 
 
 class SessionItem(BaseModel):
@@ -509,7 +531,9 @@ async def agent_chat_stream(request: ChatRequest):
       - error: error occurred, contains 'message'
     """
     session_id = request.session_id or str(uuid.uuid4())
-    local_stock_response = await asyncio.to_thread(_run_local_stock_chat, request, session_id)
+    local_stock_response = None
+    if _should_use_local_stock_chat(request):
+        local_stock_response = await asyncio.to_thread(_run_local_stock_chat, request, session_id)
     if local_stock_response is not None:
         async def local_event_generator():
             yield "data: " + json.dumps({"type": "thinking"}, ensure_ascii=False) + "\n\n"
@@ -581,8 +605,16 @@ async def agent_chat_stream(request: ChatRequest):
             )
         except Exception as exc:
             logger.error(f"Agent stream error: {exc}")
+            degraded = _build_degraded_agent_response(session_id, exc)
             asyncio.run_coroutine_threadsafe(
-                queue.put({"type": "error", "message": str(exc)}),
+                queue.put({
+                    "type": "done",
+                    "success": False,
+                    "content": degraded.content,
+                    "error": degraded.error,
+                    "total_steps": 0,
+                    "session_id": session_id,
+                }),
                 loop,
             )
 

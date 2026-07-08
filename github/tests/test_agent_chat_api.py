@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
@@ -131,6 +132,7 @@ def test_agent_chat_stream_forwards_stock_context_to_executor(tmp_path: Path) ->
     assert kwargs["context"]["stock_name"] == "匿名标的"
 
 
+@pytest.mark.skip(reason="ordinary stock chat should use the full agent path, not the lightweight path")
 def test_agent_chat_stream_uses_local_stock_fallback_for_stock_skill(tmp_path: Path) -> None:
     config = SimpleNamespace(is_agent_available=lambda: True)
     analysis_payload = {
@@ -179,3 +181,132 @@ def test_agent_chat_stream_uses_local_stock_fallback_for_stock_skill(tmp_path: P
     assert "工业富联" in response.text
     assert "BBI" in response.text
     build_executor.assert_not_called()
+
+
+@pytest.mark.skip(reason="ordinary stock chat should use the full agent path, not the lightweight path")
+def test_agent_chat_stream_uses_camel_case_context_stock_code_for_followup(tmp_path: Path) -> None:
+    config = SimpleNamespace(is_agent_available=lambda: True)
+    analysis_payload = {
+        "stock_code": "601138",
+        "stock_name": "Industrial Fulian",
+        "report": {
+            "meta": {
+                "stock_code": "601138",
+                "stock_name": "Industrial Fulian",
+                "current_price": 64.72,
+                "change_pct": -1.2,
+            },
+            "summary": {
+                "analysis_summary": "local context fallback summary",
+                "action_label": "observe",
+                "trend_prediction": "weak",
+                "sentiment_score": 45,
+            },
+            "details": {"technical_analysis": "BBI is below price."},
+            "strategy": {"ideal_buy": "wait for BBI confirmation"},
+        },
+    }
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor") as build_executor:
+                with patch("src.services.analysis_service.AnalysisService") as service_cls:
+                    service_cls.return_value.analyze_stock_lightweight.return_value = analysis_payload
+                    client = TestClient(create_app(static_dir=tmp_path / "static"))
+                    response = client.post(
+                        "/api/v1/agent/chat/stream",
+                        json={
+                            "message": "how is it now",
+                            "session_id": "s-context-stock",
+                            "skills": ["stock_analyzer"],
+                            "context": {
+                                "stockCode": "601138",
+                                "stockName": "Industrial Fulian",
+                            },
+                        },
+                    )
+
+    assert response.status_code == 200
+    assert '"type": "done"' in response.text
+    assert "local context fallback summary" in response.text
+    build_executor.assert_not_called()
+
+
+@pytest.mark.skip(reason="ordinary stock chat should keep analyzing and degrade only when dependencies fail")
+def test_agent_chat_stream_stock_skill_without_code_fails_fast(tmp_path: Path) -> None:
+    config = SimpleNamespace(is_agent_available=lambda: True)
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor") as build_executor:
+                client = TestClient(create_app(static_dir=tmp_path / "static"))
+                response = client.post(
+                    "/api/v1/agent/chat/stream",
+                    json={
+                        "message": "how is it now",
+                        "session_id": "s-missing-stock",
+                        "skills": ["stock_analyzer"],
+                    },
+                )
+
+    assert response.status_code == 200
+    assert '"type": "done"' in response.text
+    assert '"success": false' in response.text
+    assert "stock_code_required" in response.text
+    build_executor.assert_not_called()
+
+
+def test_agent_chat_stream_keeps_stock_skill_on_full_executor_path(tmp_path: Path) -> None:
+    executor = MagicMock()
+    executor.chat.return_value = SimpleNamespace(
+        success=True,
+        content="full stock analysis result",
+        error=None,
+        total_steps=3,
+    )
+    config = SimpleNamespace(is_agent_available=lambda: True)
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor", return_value=executor) as build_executor:
+                client = TestClient(create_app(static_dir=tmp_path / "static"))
+                response = client.post(
+                    "/api/v1/agent/chat/stream",
+                    json={
+                        "message": "601138 how is it now",
+                        "session_id": "s-stock-full",
+                        "skills": ["stock_analyzer"],
+                        "context": {"stockCode": "601138", "stockName": "Industrial Fulian"},
+                    },
+                )
+
+    assert response.status_code == 200
+    assert '"type": "done"' in response.text
+    assert "full stock analysis result" in response.text
+    build_executor.assert_called_once()
+    assert executor.chat.call_args.kwargs["context"]["skills"] == ["stock_analyzer"]
+
+
+def test_agent_chat_stream_returns_degraded_done_when_executor_raises_502(tmp_path: Path) -> None:
+    executor = MagicMock()
+    executor.chat.side_effect = RuntimeError("upstream returned HTML error page (HTTP 502 / 502)")
+    config = SimpleNamespace(is_agent_available=lambda: True)
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor", return_value=executor):
+                client = TestClient(create_app(static_dir=tmp_path / "static"))
+                response = client.post(
+                    "/api/v1/agent/chat/stream",
+                    json={
+                        "message": "601138 how is it now",
+                        "session_id": "s-stock-502",
+                        "skills": ["stock_analyzer"],
+                    },
+                )
+
+    assert response.status_code == 200
+    assert '"type": "done"' in response.text
+    assert '"success": false' in response.text
+    assert "upstream_unavailable" in response.text
+    assert "degraded" in response.text

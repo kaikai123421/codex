@@ -269,6 +269,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       const decoder = new TextDecoder();
       let buf = '';
       let finalContent: string | null = null;
+      let streamFailureError: ParsedApiError | null = null;
       const currentProgressSteps: ProgressStep[] = [];
         const processLine = (line: string) => {
           if (!line.startsWith('data: ')) return;
@@ -276,10 +277,18 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           const event = JSON.parse(line.slice(6)) as ProgressStep;
           if (event.type === 'done') {
             const doneEvent = event as unknown as StreamFailureEvent;
+            const doneContent = typeof doneEvent.content === 'string'
+              ? doneEvent.content.trim()
+              : '';
             if (doneEvent.success === false) {
-              throw getStreamFailureError(doneEvent, '大模型调用出错，请检查 API Key 配置');
+              streamFailureError = getStreamFailureError(doneEvent, '大模型调用出错，请检查 API Key 配置');
+              if (doneContent) {
+                finalContent = doneContent;
+                return;
+              }
+              throw streamFailureError;
             }
-            finalContent = doneEvent.content ?? '';
+            finalContent = doneContent;
             return;
           }
 
@@ -322,6 +331,11 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       const { sessionId: currentSessionId, currentRoute } = get();
       const shouldAppend =
         currentSessionId === streamSessionId && !ac.signal.aborted;
+      const assistantContent = (finalContent ?? '').trim();
+
+      if (!assistantContent) {
+        throw getParsedApiError('analysis_finished_without_content');
+      }
 
       if (shouldAppend) {
         set((s) => ({
@@ -330,7 +344,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             {
               id: (Date.now() + 1).toString(),
               role: 'assistant',
-              content: finalContent || '（无内容）',
+              content: assistantContent,
               skills: payload.skills,
               skill: payload.skills?.[0],
               skillNames,
@@ -339,6 +353,10 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             },
           ],
         }));
+      }
+
+      if (streamFailureError) {
+        set({ chatError: streamFailureError });
       }
 
       if (currentRoute !== '/chat') {

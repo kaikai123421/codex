@@ -192,6 +192,56 @@ describe('agentChatStore.startStream', () => {
       rawMessage: '分析出错',
     });
   });
+
+  it('does not append an empty assistant message when the SSE done event has no content', async () => {
+    vi.mocked(agentApi.chatStream).mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"thinking","message":"searching comprehensive intel"}',
+        'data: {"type":"done","success":true,"content":"   "}',
+      ]),
+    );
+
+    await useAgentChatStore
+      .getState()
+      .startStream({ message: 'how is it now', session_id: 'session-test' }, { skillName: 'stock_analyzer' });
+
+    const state = useAgentChatStore.getState();
+    expect(state.loading).toBe(false);
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]).toMatchObject({
+      role: 'user',
+      content: 'how is it now',
+    });
+    expect(state.chatError).toMatchObject({
+      category: 'empty_response',
+      rawMessage: 'analysis_finished_without_content',
+    });
+  });
+
+  it('shows degraded content when the SSE done event fails with a fallback answer', async () => {
+    vi.mocked(agentApi.chatStream).mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"thinking","message":"searching comprehensive intel"}',
+        'data: {"type":"done","success":false,"content":"degraded: upstream failed, use cached quote","error":"upstream_unavailable: HTTP 502"}',
+      ]),
+    );
+
+    await useAgentChatStore
+      .getState()
+      .startStream({ message: '601138 怎么看', session_id: 'session-test' }, { skillName: 'stock_analyzer' });
+
+    const state = useAgentChatStore.getState();
+    expect(state.loading).toBe(false);
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: 'degraded: upstream failed, use cached quote',
+    });
+    expect(state.chatError).toMatchObject({
+      category: 'upstream_network',
+      rawMessage: 'upstream_unavailable: HTTP 502',
+    });
+  });
 });
 
 describe('agentChatStore.switchSession', () => {

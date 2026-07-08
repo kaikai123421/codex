@@ -11,6 +11,7 @@ export type ApiErrorCategory =
   | 'upstream_llm_400'
   | 'upstream_timeout'
   | 'upstream_network'
+  | 'empty_response'
   | 'local_connection_failed'
   | 'http_error'
   | 'unknown';
@@ -523,6 +524,20 @@ export function parseApiError(error: unknown): ParsedApiError {
       rawMessage,
       status,
       category: 'invalid_tool_call',
+    });
+  }
+
+  if (includesAny(matchText, [
+    'analysis_finished_without_content',
+    'empty assistant response',
+    'empty analysis response',
+  ])) {
+    return createParsedApiError({
+      title: '分析没有生成内容',
+      message: '本次分析流程结束了，但没有返回正文。请重试；如果仍失败，请检查模型 API Key、行情源或 Render 日志。',
+      rawMessage,
+      status,
+      category: 'empty_response',
     });
   }
 
