@@ -52,12 +52,15 @@ const EMPTY_ANALYSIS_FALLBACK =
 function isMeaninglessAssistantContent(value: string): boolean {
   const normalized = value.trim();
   const lower = normalized.toLowerCase();
+  const compact = lower.replace(/\s+/g, '');
   return (
     normalized === '' ||
     normalized === '无内容' ||
     normalized === '(无内容)' ||
+    normalized === '（无内容）' ||
     lower === 'no content' ||
     lower === '(no content)' ||
+    compact === '(nocontent)' ||
     lower === 'none' ||
     lower === 'null' ||
     lower === 'analysis_finished_without_content'
@@ -66,7 +69,7 @@ function isMeaninglessAssistantContent(value: string): boolean {
 
 function buildFallbackAssistantContent(error?: ParsedApiError | null): string {
   const message = error?.message?.trim();
-  if (message && message !== 'analysis_finished_without_content') {
+  if (message && !isMeaninglessAssistantContent(message)) {
     return `${EMPTY_ANALYSIS_FALLBACK}\n\n错误：${message}`;
   }
   return EMPTY_ANALYSIS_FALLBACK;
@@ -75,8 +78,9 @@ function buildFallbackAssistantContent(error?: ParsedApiError | null): string {
 function getFirstMeaningfulStreamError(...candidates: Array<unknown>): unknown {
   for (const candidate of candidates) {
     if (typeof candidate === 'string') {
-      if (candidate.trim() !== '') {
-        return candidate;
+      const value = candidate.trim();
+      if (value !== '' && !isMeaninglessAssistantContent(value)) {
+        return value;
       }
       continue;
     }

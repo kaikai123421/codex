@@ -51,6 +51,15 @@ def _get_agent_chat_sync_timeout_seconds() -> float:
         timeout = 24.0
     return max(0.1, timeout)
 
+
+def _get_agent_chat_stream_idle_timeout_seconds() -> float:
+    raw = os.getenv("AGENT_CHAT_STREAM_IDLE_TIMEOUT_SECONDS", "90")
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        timeout = 90.0
+    return max(5.0, timeout)
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -132,7 +141,32 @@ def _should_use_local_stock_chat(request: ChatRequest) -> bool:
 
 
 def _summarize_exception_for_user(exc: Exception) -> str:
-    error_text = str(exc) or exc.__class__.__name__
+    raw_error_text = str(exc) or exc.__class__.__name__
+    probe = raw_error_text[:4096].lower()
+    looks_like_html = (
+        "<!doctype" in probe
+        or "<html" in probe
+        or "<body" in probe
+        or "<title" in probe
+    )
+    if looks_like_html:
+        title_match = re.search(r"<title[^>]*>([\s\S]*?)</title>", raw_error_text, re.I)
+        title_text = ""
+        if title_match:
+            title_text = re.sub(r"\s+", " ", title_match.group(1)).strip()
+
+        parts: List[str] = []
+        if "502" in probe:
+            parts.append("HTTP 502")
+        if "bad gateway" in probe:
+            parts.append("Bad Gateway")
+        if title_text and title_text not in parts:
+            parts.append(title_text)
+
+        suffix = f"（{' / '.join(parts)}）" if parts else ""
+        return f"上游返回 HTML 错误页{suffix}，已隐藏原始网页源码"
+
+    error_text = raw_error_text
     error_text = re.sub(r"<[^>]+>", " ", error_text)
     error_text = re.sub(r"\s+", " ", error_text).strip()
     if not error_text:
@@ -702,12 +736,16 @@ async def agent_chat_stream(request: ChatRequest):
     async def event_generator():
         # Start executor in a thread so we don't block the event loop
         fut = loop.run_in_executor(None, run_sync)
+        idle_timeout = _get_agent_chat_stream_idle_timeout_seconds()
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=300.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=idle_timeout)
                 except asyncio.TimeoutError:
-                    degraded = _build_degraded_agent_response(session_id, TimeoutError("analysis_timeout"))
+                    degraded = _build_degraded_agent_response(
+                        session_id,
+                        TimeoutError(f"analysis_stream_idle_timeout_{idle_timeout:g}s"),
+                    )
                     yield "data: " + json.dumps({
                         "type": "done",
                         "success": False,

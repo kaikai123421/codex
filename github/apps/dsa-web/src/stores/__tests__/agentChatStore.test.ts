@@ -263,6 +263,29 @@ describe('agentChatStore.startStream', () => {
     });
   });
 
+  it('ignores meaningless content when the SSE done event fails', async () => {
+    vi.mocked(agentApi.chatStream).mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"thinking","message":"searching comprehensive intel"}',
+        'data: {"type":"done","success":false,"content":"(无内容)","error":"","message":""}',
+      ]),
+    );
+
+    await useAgentChatStore
+      .getState()
+      .startStream({ message: '601138 how is it now', session_id: 'session-test' }, { skillName: 'stock_analyzer' });
+
+    const state = useAgentChatStore.getState();
+    expect(state.loading).toBe(false);
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]).toMatchObject({
+      role: 'assistant',
+    });
+    expect(state.messages[1].content).toContain('Render');
+    expect(state.messages[1].content).not.toContain('(无内容)');
+    expect(state.chatError?.rawMessage).not.toContain('(无内容)');
+  });
+
   it('shows a degraded assistant message when the stream request fails before a done event', async () => {
     vi.mocked(agentApi.chatStream).mockRejectedValue(
       new Error('upstream returned HTML error page (HTTP 502 / 502)'),
