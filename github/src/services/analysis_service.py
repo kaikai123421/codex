@@ -202,6 +202,11 @@ class AnalysisService:
             return f"1.{code}"
         return f"0.{code}"
 
+    def _tencent_symbol(self, stock_code: str) -> str:
+        code = str(stock_code).strip()
+        prefix = "sh" if code.startswith(("5", "6", "9")) else "sz"
+        return f"{prefix}{code}"
+
     def _safe_float(self, value: Any) -> Optional[float]:
         try:
             if value is None or value == "-":
@@ -229,6 +234,10 @@ class AnalysisService:
                 payload = json.loads(resp.read().decode("utf-8", errors="replace"))
             rows = ((payload or {}).get("data") or {}).get("diff") or []
             if not rows:
+                fallback = self._fetch_tencent_light_quote(stock_code)
+                if fallback.get("ok"):
+                    fallback["fallback_from"] = "eastmoney_empty"
+                    return fallback
                 return {"ok": False, "error": "empty quote response", "source": "eastmoney_push2"}
             row = rows[0]
             return {
@@ -251,7 +260,54 @@ class AnalysisService:
             }
         except Exception as exc:
             logger.warning("light quote fetch failed for %s: %s", stock_code, exc)
+            fallback = self._fetch_tencent_light_quote(stock_code)
+            if fallback.get("ok"):
+                fallback["fallback_from"] = f"eastmoney_error:{type(exc).__name__}"
+                return fallback
             return {"ok": False, "error": str(exc), "source": "eastmoney_push2"}
+
+    def _fetch_tencent_light_quote(self, stock_code: str) -> Dict[str, Any]:
+        symbol = self._tencent_symbol(stock_code)
+        url = f"https://qt.gtimg.cn/q={symbol}"
+        timeout = float(os.getenv("LIGHT_ANALYSIS_QUOTE_TIMEOUT", "5") or "5")
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 DSA-LightMode/1.0",
+                    "Referer": "https://gu.qq.com/",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                text = resp.read().decode("gbk", errors="replace")
+            _, _, quoted = text.partition('="')
+            raw = quoted.rsplit('"', 1)[0] if quoted else ""
+            parts = raw.split("~")
+            if len(parts) < 39 or not parts[2]:
+                return {"ok": False, "error": "empty tencent quote response", "source": "tencent_gtimg"}
+
+            amount_wan = self._safe_float(parts[37] if len(parts) > 37 else None)
+            return {
+                "ok": True,
+                "source": "tencent_gtimg",
+                "code": parts[2] or stock_code,
+                "name": parts[1] or f"\u80a1\u7968{stock_code}",
+                "price": self._safe_float(parts[3]),
+                "change_pct": self._safe_float(parts[32] if len(parts) > 32 else None),
+                "change": self._safe_float(parts[31] if len(parts) > 31 else None),
+                "volume": self._safe_float(parts[36] if len(parts) > 36 else None),
+                "amount": amount_wan * 10000 if amount_wan is not None else None,
+                "turnover": self._safe_float(parts[38] if len(parts) > 38 else None),
+                "volume_ratio": self._safe_float(parts[49] if len(parts) > 49 else None),
+                "high": self._safe_float(parts[33] if len(parts) > 33 else None),
+                "low": self._safe_float(parts[34] if len(parts) > 34 else None),
+                "open": self._safe_float(parts[5] if len(parts) > 5 else None),
+                "prev_close": self._safe_float(parts[4] if len(parts) > 4 else None),
+                "main_fund": None,
+            }
+        except Exception as exc:
+            logger.warning("tencent light quote fetch failed for %s: %s", stock_code, exc)
+            return {"ok": False, "error": str(exc), "source": "tencent_gtimg"}
 
     def _build_lightweight_result(
         self,
@@ -262,6 +318,9 @@ class AnalysisService:
         from src.analyzer import AnalysisResult
 
         quote = self._fetch_light_quote(stock_code)
+        source_name = quote.get("source") or "unknown"
+        if quote.get("fallback_from"):
+            source_name = f"{source_name} (fallback: {quote.get('fallback_from')})"
         price = quote.get("price") if quote.get("ok") else None
         change_pct = quote.get("change_pct") if quote.get("ok") else None
         name = quote.get("name") if quote.get("ok") else f"股票{stock_code}"
@@ -348,7 +407,7 @@ class AnalysisService:
             buy_reason="数据不完整时不主动给买入结论。",
             market_snapshot=quote,
             search_performed=False,
-            data_sources="eastmoney_push2_quote; render_light_mode",
+            data_sources=f"{source_name}; render_light_mode",
             success=True,
             current_price=price,
             change_pct=change_pct,
