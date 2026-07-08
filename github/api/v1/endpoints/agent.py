@@ -129,7 +129,7 @@ def _extract_local_stock_code(message: str, context: Optional[Dict[str, Any]], s
 
     ctx = context or {}
     ctx_code = str(ctx.get("stock_code") or "").strip()
-    if ctx_code and _has_stock_skill(skills):
+    if ctx_code and re.fullmatch(r"(?:[0135689]\d{5}|92\d{4})", ctx_code):
         return ctx_code
     return None
 
