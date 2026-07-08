@@ -109,7 +109,13 @@ class AnalysisService:
                 config.report_language = normalized_report_language
 
             rt = ReportType.from_str(report_type)
-            if self._render_light_mode_enabled():
+            # Ordinary stock questions must stay on the full analysis path.
+            # Quote-only light mode is reserved for explicit lightweight callers.
+            allow_analyze_stock_light_mode = (
+                os.getenv("ALLOW_ANALYZE_STOCK_LIGHT_MODE", "").strip().lower()
+                in {"1", "true", "yes", "on"}
+            )
+            if allow_analyze_stock_light_mode and self._render_light_mode_enabled():
                 if progress_callback:
                     progress_callback(35, "云端轻量模式：正在读取行情")
                 result = self._build_lightweight_result(

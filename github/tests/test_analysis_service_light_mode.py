@@ -37,3 +37,12 @@ def test_render_blueprint_disables_analysis_light_mode_by_default() -> None:
         r"key:\s*RENDER_ANALYSIS_LIGHT_MODE\s*\n\s*value:\s*\"false\"",
         text,
     )
+
+
+def test_plain_analyze_stock_requires_separate_light_mode_escape_hatch() -> None:
+    service_source = (
+        Path(__file__).resolve().parents[1] / "src" / "services" / "analysis_service.py"
+    ).read_text(encoding="utf-8")
+
+    assert "ALLOW_ANALYZE_STOCK_LIGHT_MODE" in service_source
+    assert "if allow_analyze_stock_light_mode and self._render_light_mode_enabled()" in service_source
