@@ -121,19 +121,34 @@ def _should_use_local_stock_chat(request: ChatRequest) -> bool:
     return False
 
 
-def _build_degraded_agent_response(session_id: str, exc: Exception) -> ChatResponse:
+def _summarize_exception_for_user(exc: Exception) -> str:
     error_text = str(exc) or exc.__class__.__name__
+    error_text = re.sub(r"<[^>]+>", " ", error_text)
+    error_text = re.sub(r"\s+", " ", error_text).strip()
+    if not error_text:
+        error_text = exc.__class__.__name__
+    if len(error_text) > 300:
+        error_text = error_text[:300].rstrip() + "..."
+    return error_text
+
+
+def _build_degraded_agent_response(session_id: str, exc: Exception) -> ChatResponse:
+    error_text = _summarize_exception_for_user(exc)
     content = (
-        "degraded: full analysis could not complete because an external dependency failed.\n"
-        "I did not fabricate a stock conclusion. Please retry later, or use the latest quote/K-line shown in the app "
-        "as a temporary reference.\n"
-        f"reason: {error_text}"
+        "## 降级回答\n\n"
+        "这次完整分析没有跑完，原因是模型、行情源或 Render 上游接口临时异常。"
+        "我不会为了凑字编造 BBI、资金流或买卖结论。\n\n"
+        "你现在可以先这样处理：\n"
+        "- 点击重试，优先重新跑完整分析。\n"
+        "- 如果仍失败，先只看页面已有的实时行情、K 线、成交量和持仓成本，不做新增决策。\n"
+        "- 盘中遇到 502/超时，按“数据缺失”处理，不把它当成利多或利空。\n\n"
+        f"故障摘要：{error_text}"
     )
     return ChatResponse(
         success=False,
         content=content,
         session_id=session_id,
-        error=f"upstream_unavailable: {error_text}",
+        error=f"upstream_unavailable: {error_text[:240]}",
     )
 
 

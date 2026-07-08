@@ -345,4 +345,33 @@ def test_agent_chat_stream_returns_degraded_done_when_executor_raises_502(tmp_pa
     assert '"type": "done"' in response.text
     assert '"success": false' in response.text
     assert "upstream_unavailable" in response.text
-    assert "degraded" in response.text
+    assert "降级回答" in response.text
+
+
+def test_agent_chat_returns_degraded_response_without_raw_html_when_executor_raises_502(tmp_path: Path) -> None:
+    executor = MagicMock()
+    executor.chat.side_effect = RuntimeError(
+        "<!DOCTYPE html><html><head><title>502</title></head><body>Bad Gateway</body></html>"
+    )
+    config = SimpleNamespace(is_agent_available=lambda: True)
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor", return_value=executor):
+                client = TestClient(create_app(static_dir=tmp_path / "static"))
+                response = client.post(
+                    "/api/v1/agent/chat",
+                    json={
+                        "message": "601138 how is it now",
+                        "session_id": "s-stock-502-json",
+                        "skills": ["stock_analyzer"],
+                    },
+                )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is False
+    assert "降级回答" in payload["content"]
+    assert "upstream_unavailable" in payload["error"]
+    assert "<html" not in payload["content"].lower()
+    assert "<title" not in payload["error"].lower()

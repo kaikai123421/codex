@@ -46,6 +46,22 @@ type StreamFailureEvent = {
   message?: unknown;
 };
 
+const EMPTY_ANALYSIS_FALLBACK =
+  '这次分析没有生成有效内容。可能是模型、行情源或 Render 上游依赖临时失败；我没有编造结论。请点击重试，或先按页面已有行情、K 线和持仓成本做临时判断。';
+
+function isMeaninglessAssistantContent(value: string): boolean {
+  const normalized = value.trim();
+  return normalized === '' || normalized === '无内容' || normalized === '(无内容)';
+}
+
+function buildFallbackAssistantContent(error?: ParsedApiError | null): string {
+  const message = error?.message?.trim();
+  if (message && message !== 'analysis_finished_without_content') {
+    return `${EMPTY_ANALYSIS_FALLBACK}\n\n错误：${message}`;
+  }
+  return EMPTY_ANALYSIS_FALLBACK;
+}
+
 function getFirstMeaningfulStreamError(...candidates: Array<unknown>): unknown {
   for (const candidate of candidates) {
     if (typeof candidate === 'string') {
@@ -280,15 +296,17 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             const doneContent = typeof doneEvent.content === 'string'
               ? doneEvent.content.trim()
               : '';
+            const meaningfulDoneContent = isMeaninglessAssistantContent(doneContent) ? '' : doneContent;
             if (doneEvent.success === false) {
               streamFailureError = getStreamFailureError(doneEvent, '大模型调用出错，请检查 API Key 配置');
-              if (doneContent) {
-                finalContent = doneContent;
+              if (meaningfulDoneContent) {
+                finalContent = meaningfulDoneContent;
                 return;
               }
-              throw streamFailureError;
+              finalContent = buildFallbackAssistantContent(streamFailureError);
+              return;
             }
-            finalContent = doneContent;
+            finalContent = meaningfulDoneContent;
             return;
           }
 
@@ -331,10 +349,12 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       const { sessionId: currentSessionId, currentRoute } = get();
       const shouldAppend =
         currentSessionId === streamSessionId && !ac.signal.aborted;
-      const assistantContent = (finalContent ?? '').trim();
+      let assistantContent = (finalContent ?? '').trim();
 
-      if (!assistantContent) {
-        throw getParsedApiError('analysis_finished_without_content');
+      if (isMeaninglessAssistantContent(assistantContent)) {
+        const emptyError = getParsedApiError('analysis_finished_without_content');
+        streamFailureError = streamFailureError ?? emptyError;
+        assistantContent = buildFallbackAssistantContent(streamFailureError);
       }
 
       if (shouldAppend) {

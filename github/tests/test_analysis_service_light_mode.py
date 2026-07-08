@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from src.services.analysis_service import AnalysisService
 
 
@@ -24,3 +27,13 @@ def test_light_mode_requires_explicit_env_opt_in(monkeypatch) -> None:
     service = AnalysisService()
 
     assert service._render_light_mode_enabled() is True
+
+
+def test_render_blueprint_disables_analysis_light_mode_by_default() -> None:
+    render_yaml = Path(__file__).resolve().parents[1] / "render.yaml"
+    text = render_yaml.read_text(encoding="utf-8")
+
+    assert re.search(
+        r"key:\s*RENDER_ANALYSIS_LIGHT_MODE\s*\n\s*value:\s*\"false\"",
+        text,
+    )

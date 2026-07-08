@@ -46,7 +46,7 @@ services:
       - key: MAX_WORKERS
         value: "1"
       - key: RENDER_ANALYSIS_LIGHT_MODE
-        value: "true"
+        value: "false"
       - key: LIGHT_ANALYSIS_QUOTE_TIMEOUT
         value: "5"
       - key: EFINANCE_CALL_TIMEOUT

@@ -140,7 +140,12 @@ describe('agentChatStore.startStream', () => {
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
-    expect(state.messages).toHaveLength(1);
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]).toMatchObject({
+      role: 'assistant',
+    });
+    expect(state.messages[1].content).toContain('这次分析没有生成有效内容');
+    expect(state.messages[1].content).toContain('错误：');
     expect(state.chatError).toMatchObject({
       title: '系统没有配置可用的 LLM 模型',
       message: '请先在系统设置中配置主模型、可用渠道或相关 API Key 后再重试。',
@@ -193,7 +198,7 @@ describe('agentChatStore.startStream', () => {
     });
   });
 
-  it('does not append an empty assistant message when the SSE done event has no content', async () => {
+  it('shows a degraded assistant message when the SSE done event has no content', async () => {
     vi.mocked(agentApi.chatStream).mockResolvedValue(
       createStreamResponse([
         'data: {"type":"thinking","message":"searching comprehensive intel"}',
@@ -207,11 +212,16 @@ describe('agentChatStore.startStream', () => {
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
-    expect(state.messages).toHaveLength(1);
+    expect(state.messages).toHaveLength(2);
     expect(state.messages[0]).toMatchObject({
       role: 'user',
       content: 'how is it now',
     });
+    expect(state.messages[1]).toMatchObject({
+      role: 'assistant',
+    });
+    expect(state.messages[1].content).toContain('这次分析没有生成有效内容');
+    expect(state.messages[1].content).not.toContain('无内容');
     expect(state.chatError).toMatchObject({
       category: 'empty_response',
       rawMessage: 'analysis_finished_without_content',
