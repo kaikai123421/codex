@@ -53,17 +53,21 @@ def _should_use_lightweight_analysis_task(
     *,
     query_source: Optional[str],
     skills: Optional[List[str]],
+    portfolio_context: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
-    Route ordinary web/API analysis tasks through the stable lightweight path.
+    Route only explicitly marked tasks through the stable lightweight path.
 
-    Strategy-driven tasks keep the full pipeline because skills may require
-    broader context, model calls, and report generation.
+    Ordinary stock questions must continue through the full analysis pipeline.
+    The lightweight path is kept as a deliberate fallback, not a Render default.
     """
     if skills:
         return False
-    source = (query_source or "api").strip().lower()
-    return source in {"api", "web", "ui"}
+    context = portfolio_context if isinstance(portfolio_context, dict) else {}
+    return bool(
+        context.get("use_lightweight_stock_fallback")
+        or context.get("force_lightweight_stock")
+    )
 
 
 class TaskStatus(str, Enum):
@@ -733,7 +737,11 @@ class AnalysisTaskQueue:
                     trigger_source=query_source,
                     event_sink=lambda event: self.append_task_flow_event(task_id, event),
                 )
-            if _should_use_lightweight_analysis_task(query_source=query_source, skills=skills):
+            if _should_use_lightweight_analysis_task(
+                query_source=query_source,
+                skills=skills,
+                portfolio_context=portfolio_context,
+            ):
                 self.update_task_progress(task_id, 35, "正在读取稳定行情数据")
                 result = service.analyze_stock_lightweight(
                     stock_code=stock_code,

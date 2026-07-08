@@ -168,9 +168,7 @@ class AnalysisService:
 
     def _render_light_mode_enabled(self) -> bool:
         value = os.getenv("RENDER_ANALYSIS_LIGHT_MODE")
-        if value is not None:
-            return value.strip().lower() in {"1", "true", "yes", "on"}
-        return os.getenv("RENDER", "").strip().lower() == "true" or bool(os.getenv("RENDER_SERVICE_ID"))
+        return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
     def analyze_stock_lightweight(
         self,

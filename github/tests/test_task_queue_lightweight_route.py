@@ -49,17 +49,17 @@ class TaskQueueLightweightRouteTestCase(unittest.TestCase):
                 executor.shutdown(wait=False)
         AnalysisTaskQueue._instance = self._original_instance
 
-    def test_plain_web_analysis_task_uses_lightweight_route(self) -> None:
+    def test_plain_web_analysis_task_uses_full_pipeline_route(self) -> None:
         queue = AnalysisTaskQueue(max_workers=1)
         task = TaskInfo(task_id="task-light", stock_code="601138", query_source="api")
         queue._tasks[task.task_id] = task
         queue._analyzing_stocks["601138"] = task.task_id
 
         service = MagicMock()
-        service.analyze_stock_lightweight.return_value = {
+        service.analyze_stock.return_value = {
             "stock_code": "601138",
             "stock_name": "工业富联",
-            "report": "lightweight ok",
+            "report": "full ok",
         }
         analysis_mod = types.ModuleType("src.services.analysis_service")
         analysis_mod.AnalysisService = MagicMock(return_value=service)
@@ -79,14 +79,53 @@ class TaskQueueLightweightRouteTestCase(unittest.TestCase):
             )
 
         self.assertEqual(result["stock_code"], "601138")
+        service.analyze_stock.assert_called_once()
+        service.analyze_stock_lightweight.assert_not_called()
+        self.assertEqual(queue._tasks["task-light"].status, TaskStatus.COMPLETED)
+
+    def test_explicit_lightweight_context_can_still_use_lightweight_route(self) -> None:
+        queue = AnalysisTaskQueue(max_workers=1)
+        task = TaskInfo(
+            task_id="task-light-explicit",
+            stock_code="601138",
+            query_source="api",
+            portfolio_context={"use_lightweight_stock_fallback": True},
+        )
+        queue._tasks[task.task_id] = task
+        queue._analyzing_stocks["601138"] = task.task_id
+
+        service = MagicMock()
+        service.analyze_stock_lightweight.return_value = {
+            "stock_code": "601138",
+            "stock_name": "Industrial Fulian",
+            "report": "lightweight ok",
+        }
+        analysis_mod = types.ModuleType("src.services.analysis_service")
+        analysis_mod.AnalysisService = MagicMock(return_value=service)
+
+        with (
+            patch.dict(sys.modules, {"src.services.analysis_service": analysis_mod}),
+            patch("src.services.task_queue._dedupe_stock_code_key", side_effect=lambda code: code),
+        ):
+            result = queue._execute_task(
+                "task-light-explicit",
+                "601138",
+                "detailed",
+                False,
+                notify=False,
+                skills=None,
+                report_language="zh",
+            )
+
+        self.assertEqual(result["stock_code"], "601138")
         service.analyze_stock_lightweight.assert_called_once_with(
             stock_code="601138",
             report_type="detailed",
-            query_id="task-light",
+            query_id="task-light-explicit",
             report_language="zh",
         )
         service.analyze_stock.assert_not_called()
-        self.assertEqual(queue._tasks["task-light"].status, TaskStatus.COMPLETED)
+        self.assertEqual(queue._tasks["task-light-explicit"].status, TaskStatus.COMPLETED)
 
     def test_skill_analysis_task_keeps_full_pipeline_route(self) -> None:
         queue = AnalysisTaskQueue(max_workers=1)
