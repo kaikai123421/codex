@@ -2,6 +2,7 @@
 """Agent chat history API regressions."""
 
 from pathlib import Path
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -432,3 +433,35 @@ def test_agent_chat_returns_degraded_response_without_raw_html_when_executor_rai
     assert "upstream_unavailable" in payload["error"]
     assert "<html" not in payload["content"].lower()
     assert "<title" not in payload["error"].lower()
+
+
+def test_agent_chat_returns_degraded_response_when_executor_times_out(monkeypatch, tmp_path: Path) -> None:
+    executor = MagicMock()
+
+    def slow_chat(**_kwargs):
+        time.sleep(0.2)
+        return SimpleNamespace(success=True, content="late full analysis", error=None)
+
+    executor.chat.side_effect = slow_chat
+    config = SimpleNamespace(is_agent_available=lambda: True)
+    monkeypatch.setenv("AGENT_CHAT_SYNC_TIMEOUT_SECONDS", "0.1")
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor", return_value=executor):
+                client = TestClient(create_app(static_dir=tmp_path / "static"))
+                response = client.post(
+                    "/api/v1/agent/chat",
+                    json={
+                        "message": "601138 how is it now",
+                        "session_id": "s-stock-timeout-json",
+                        "skills": ["stock_analyzer"],
+                    },
+                )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["content"].strip()
+    assert "analysis_timeout" in payload["error"]
+    assert "no content" not in payload["content"].lower()

@@ -6,6 +6,7 @@ Agent API endpoints.
 import asyncio
 import json
 import logging
+import os
 import re
 import uuid
 from typing import Any, Dict, List, Optional
@@ -40,6 +41,15 @@ TOOL_DISPLAY_NAMES: Dict[str, str] = {
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _get_agent_chat_sync_timeout_seconds() -> float:
+    raw = os.getenv("AGENT_CHAT_SYNC_TIMEOUT_SECONDS", "24")
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        timeout = 24.0
+    return max(0.1, timeout)
 
 class ChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -389,11 +399,23 @@ async def agent_chat(request: ChatRequest):
 
         # Offload the blocking call to a thread to avoid blocking the event loop.
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
+        chat_future = loop.run_in_executor(
             None,
             lambda: executor.chat(message=request.message, session_id=session_id,
                                   context=ctx),
         )
+        try:
+            result = await asyncio.wait_for(
+                chat_future,
+                timeout=_get_agent_chat_sync_timeout_seconds(),
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Agent chat timed out after %.1fs for session %s",
+                _get_agent_chat_sync_timeout_seconds(),
+                session_id,
+            )
+            return _build_degraded_agent_response(session_id, TimeoutError("analysis_timeout"))
 
         return _coerce_agent_result_to_response(result, session_id)
             
