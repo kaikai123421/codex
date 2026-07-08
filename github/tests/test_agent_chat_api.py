@@ -97,6 +97,42 @@ def test_agent_chat_forwards_stock_context_to_executor(tmp_path: Path) -> None:
     assert kwargs["context"]["stock_name"] == "匿名标的"
 
 
+def test_agent_chat_ignores_legacy_lightweight_flag_for_full_executor_path(tmp_path: Path) -> None:
+    executor = MagicMock()
+    executor.chat.return_value = SimpleNamespace(
+        success=True,
+        content="full analysis despite legacy lightweight flag",
+        error=None,
+    )
+    config = SimpleNamespace(is_agent_available=lambda: True)
+
+    with patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+        with patch("api.v1.endpoints.agent.get_config", return_value=config):
+            with patch("api.v1.endpoints.agent._build_executor", return_value=executor) as build_executor:
+                with patch("src.services.analysis_service.AnalysisService") as service_cls:
+                    client = TestClient(create_app(static_dir=tmp_path / "static"))
+                    response = client.post(
+                        "/api/v1/agent/chat",
+                        json={
+                            "message": "601138 how is it now",
+                            "session_id": "s-legacy-light-flag",
+                            "skills": ["stock_analyzer"],
+                            "context": {
+                                "stockCode": "601138",
+                                "use_lightweight_stock_fallback": True,
+                            },
+                        },
+                    )
+
+    assert response.status_code == 200
+    assert response.json()["content"] == "full analysis despite legacy lightweight flag"
+    build_executor.assert_called_once()
+    service_cls.return_value.analyze_stock_lightweight.assert_not_called()
+    kwargs = executor.chat.call_args.kwargs
+    assert kwargs["context"]["skills"] == ["stock_analyzer"]
+    assert kwargs["context"]["use_lightweight_stock_fallback"] is True
+
+
 def test_agent_chat_stream_forwards_stock_context_to_executor(tmp_path: Path) -> None:
     executor = MagicMock()
     executor.chat.return_value = SimpleNamespace(

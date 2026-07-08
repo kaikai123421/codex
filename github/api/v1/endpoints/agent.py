@@ -115,8 +115,10 @@ def _has_stock_skill(skills: Optional[List[str]]) -> bool:
 
 
 def _should_use_local_stock_chat(request: ChatRequest) -> bool:
-    context = request.context or {}
-    return bool(context.get("use_lightweight_stock_fallback") or context.get("force_lightweight_stock"))
+    # Legacy clients may still send lightweight fallback flags in context.
+    # Ordinary stock questions must stay on the full executor path; failures are
+    # handled by the degraded response instead of returning a lightweight report.
+    return False
 
 
 def _build_degraded_agent_response(session_id: str, exc: Exception) -> ChatResponse:
