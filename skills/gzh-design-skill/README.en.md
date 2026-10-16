@@ -2,7 +2,9 @@
 
 <div align="center">
 
-# gzh-design-skill · WeChat Layout Skill
+# 刊小匠 · WeChat Editorial and Layout Assistant
+
+This personalized edition is based on gzh-design-skill. Start with [SKILL.md](SKILL.md), [personal workflow](references/personal-workflow.md), and the [GURKBOT guide](GURKBOT.md). It retains the upstream features below and adds editorial suggestions, consistent typography and colors, scene covers, and actual import verification. The technical identifier and directory remain unchanged for compatibility.
 
 **Turn Markdown into polished HTML you can paste straight into the WeChat editor**
 

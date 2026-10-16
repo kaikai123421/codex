@@ -1,4 +1,4 @@
-# GURKBOT 加载说明
+# 刊小匠 GURKBOT 加载说明
 
 下载或克隆本仓库后，完整保留 `skills/gzh-design-skill/` 目录，不要只读取主文件。
 

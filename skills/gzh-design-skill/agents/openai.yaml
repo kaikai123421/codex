@@ -1,0 +1,4 @@
+interface:
+  display_name: "刊小匠"
+  short_description: "公众号编辑建议、统一字体配色、场景封面与图文排版"
+  default_prompt: "请使用 $gzh-design，按我的个人工作方式打磨并排版这篇公众号文章，按需生成封面并说明导入验证情况。"

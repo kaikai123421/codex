@@ -2,7 +2,9 @@
 
 <div align="center">
 
-# gzh-design-skill · 公众号排版技能
+# 刊小匠 · 公众号编辑排版助手
+
+本仓库为基于 gzh-design-skill 的个人定制版，新增编辑建议、字体配色、场景封面及公众号导入验收约定。先读 [SKILL.md](SKILL.md) 和 [个人工作方式](references/personal-workflow.md)；给其他智能体使用时参见 [GURKBOT 加载说明](GURKBOT.md)。下文保留上游完整功能介绍，默认行为以个人工作方式为准。
 
 **把 Markdown 一键排成可直接粘贴进微信公众号编辑器的精致 HTML**
 
